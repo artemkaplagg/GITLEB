@@ -34,9 +34,9 @@ DATA_DIR.mkdir(exist_ok=True)
 USERS_FILE_PATH = DATA_DIR / USERS_FILE
 
 # Images
-IMG_MAIN_MENU = "https://ibb.co/ycP5Xjfg"
-IMG_LOGIN = "https://ibb.co/j9mWj9Qw"
-IMG_CONNECT = "https://ibb.co/YTTpMhj2"
+IMG_MAIN_MENU = "https://i.ibb.co/1sKjVzT/main-menu.jpg"
+IMG_LOGIN = "https://i.ibb.co/0jQY0hH/login.jpg"
+IMG_CONNECT = "https://i.ibb.co/4YgK8Rg/connect.jpg"
 
 # States
 (
@@ -142,19 +142,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = str(update.effective_user.id)
 
+        # Очищаем старые данные
+        context.user_data.clear()
+        
         # Если пользователь уже зарегистрирован
         if UserStorage.user_exists(user_id):
             return await show_main_menu(update, context)
-
+        
         # Новый пользователь - начинаем регистрацию
         msg = await update.message.reply_photo(
             photo=IMG_LOGIN,
             caption=Messages.REGISTRATION_WELCOME,
         )
-
+        
         context.user_data["register_message_id"] = msg.message_id
+        context.user_data["registration_started"] = True
         return ASK_NAME
-
+        
     except TelegramError as e:
         logger.error(f"Ошибка Telegram при /start: {e}")
         await update.message.reply_text(Messages.ERROR)
@@ -168,6 +172,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ввода имени"""
     try:
+        # Удаляем фото регистрации
+        if "register_message_id" in context.user_data:
+            try:
+                await context.bot.delete_message(
+                    chat_id=update.effective_chat.id,
+                    message_id=context.user_data["register_message_id"],
+                )
+                del context.user_data["register_message_id"]
+            except TelegramError as e:
+                logger.warning(f"Не удалось удалить сообщение регистрации: {e}")
+        
         name = update.message.text.strip()
 
         if not name or len(name) < 2:
@@ -230,23 +245,13 @@ async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(Messages.ERROR)
             return ConversationHandler.END
 
-        # Удаляем сообщение регистрации
-        if "register_message_id" in context.user_data:
-            try:
-                await context.bot.delete_message(
-                    chat_id=update.effective_chat.id,
-                    message_id=context.user_data["register_message_id"],
-                )
-            except TelegramError as e:
-                logger.warning(f"Не удалось удалить сообщение регистрации: {e}")
-
         # Экран подключения
         connect_msg = await update.message.reply_photo(
             photo=IMG_CONNECT,
             caption=Messages.CONNECTING
         )
 
-        await asyncio.sleep(3)  # Сократил время ожидания
+        await asyncio.sleep(3)
 
         # Удаляем сообщение подключения
         try:
@@ -257,6 +262,10 @@ async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError as e:
             logger.warning(f"Не удалось удалить сообщение подключения: {e}")
 
+        # Очищаем временные данные
+        if "registration_started" in context.user_data:
+            del context.user_data["registration_started"]
+            
         return await show_main_menu(update, context)
 
     except Exception as e:
@@ -270,20 +279,47 @@ async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать главное меню"""
     try:
-        await update.message.reply_photo(
-            photo=IMG_MAIN_MENU,
-            caption=Messages.MAIN_MENU_CAPTION,
-            reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
-        )
+        # Проверяем, есть ли сообщение для ответа (update.message может отсутствовать при вызове из ask_goal)
+        if update.message:
+            await update.message.reply_photo(
+                photo=IMG_MAIN_MENU,
+                caption=Messages.MAIN_MENU_CAPTION,
+                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
+            )
+        else:
+            # Если вызывается из ask_goal, используем context для отправки
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=IMG_MAIN_MENU,
+                caption=Messages.MAIN_MENU_CAPTION,
+                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
+            )
         return MAIN_MENU
 
     except TelegramError as e:
         logger.error(f"Ошибка при показе меню: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return ConversationHandler.END
+        # Если не удалось отправить фото, отправляем текстовое меню
+        if update.message:
+            await update.message.reply_text(
+                Messages.MAIN_MENU_CAPTION,
+                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=Messages.MAIN_MENU_CAPTION,
+                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
+            )
+        return MAIN_MENU
     except Exception as e:
         logger.error(f"Неожиданная ошибка в show_main_menu: {e}")
-        await update.message.reply_text(Messages.ERROR)
+        if update.message:
+            await update.message.reply_text(Messages.ERROR)
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=Messages.ERROR,
+            )
         return ConversationHandler.END
 
 
