@@ -8,15 +8,8 @@ Application, CommandHandler, MessageHandler, ConversationHandler,
 ContextTypes, filters
 )
 
-# Файл, где будут сохраняться записи дневника
-
 DIARY_FILE = “diary_data.json”
-
-# ID стикера (твой)
-
 STICKER_ID = “CAACAgQAAxkBAAEQY2ZpfebQk4Af9-103htwFhoVEm-H7gACugwAAksGmFH416EKFkWuhDgE”
-
-# Этапы диалога
 
 CHOOSING_ACTION = 1
 ADDING_GOOD = 2
@@ -25,34 +18,23 @@ ADDING_TIKTOK = 4
 ADDING_READ = 5
 ADDING_SLEEP = 6
 
-# Загрузка данных из файла
-
 def load_diary():
 if os.path.exists(DIARY_FILE):
 with open(DIARY_FILE, “r”, encoding=“utf-8”) as f:
 return json.load(f)
 return {}
 
-# Сохранение данных в файл
-
 def save_diary(data):
 with open(DIARY_FILE, “w”, encoding=“utf-8”) as f:
 json.dump(data, f, ensure_ascii=False, indent=2)
 
-# Экранирование спецсимволов для Markdown V2
-
 def escape_markdown(text):
-“”“Экранируем специальные символы для Markdown V2”””
 special_chars = [’_’, ‘*’, ‘[’, ‘]’, ‘(’, ‘)’, ‘~’, ‘`’, ‘>’, ‘#’, ‘+’, ‘-’, ‘=’, ‘|’, ‘{’, ‘}’, ‘.’, ‘!’]
 for char in special_chars:
 text = text.replace(char, f’\{char}’)
 return text
 
-# КОМАНДА: /start
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Стартовая команда”””
-# Отправляем стикер
 await update.message.reply_sticker(STICKER_ID)
 
 ```
@@ -62,7 +44,6 @@ keyboard = [
 ]
 reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# Красивое сообщение на Markdown V2
 welcome_text = (
     "*🎯 Добро пожаловать в твой личный дневник\\!*\n\n"
     "_Этот бот поможет тебе отслеживать прогресс и изменять жизнь_\n\n"
@@ -77,10 +58,7 @@ await update.message.reply_text(
 return CHOOSING_ACTION
 ```
 
-# КОМАНДА: Главное меню
-
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Возврат в главное меню”””
 keyboard = [
 [“📝 Добавить запись”, “📊 Статистика”],
 [“📖 История”, “❌ Выход”]
@@ -101,11 +79,7 @@ await update.message.reply_text(
 return CHOOSING_ACTION
 ```
 
-# ДЕЙСТВИЕ: Добавить запись
-
 async def add_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Начало добавления записи”””
-# Отправляем стикер
 await update.message.reply_sticker(STICKER_ID)
 
 ```
@@ -130,10 +104,7 @@ await update.message.reply_text(
 return ADDING_GOOD
 ```
 
-# ЭТАП 1: Хорошее
-
 async def adding_good(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Записываем хорошее”””
 context.user_data[‘entry’][‘good’] = update.message.text
 
 ```
@@ -152,10 +123,7 @@ await update.message.reply_text(
 return ADDING_BETTER
 ```
 
-# ЭТАП 2: Что улучшить
-
 async def adding_better(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Записываем, что улучшить”””
 context.user_data[‘entry’][‘better’] = update.message.text
 
 ```
@@ -172,16 +140,12 @@ await update.message.reply_text(
 return ADDING_TIKTOK
 ```
 
-# ЭТАП 3: TikTok время
-
 async def adding_tiktok(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Записываем TikTok время”””
 try:
 tiktok_mins = int(update.message.text)
 context.user_data[‘entry’][‘tiktok’] = tiktok_mins
 
 ```
-    # Анализ TikTok времени
     if tiktok_mins > 180:
         emoji = "🔴"
         analysis = f"_Это {tiktok_mins // 60} часов {tiktok_mins % 60} минут\\. ОЧЕНЬ много\\._"
@@ -212,16 +176,12 @@ except ValueError:
     return ADDING_TIKTOK
 ```
 
-# ЭТАП 4: Чтение
-
 async def adding_read(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Записываем, сколько страниц прочитал”””
 try:
 pages = int(update.message.text)
 context.user_data[‘entry’][‘read’] = pages
 
 ```
-    # Анализ чтения
     if pages > 30:
         emoji = "🟢"
         analysis = f"_{pages} страниц\\! Супер\\!_"
@@ -255,16 +215,12 @@ except ValueError:
     return ADDING_READ
 ```
 
-# ЭТАП 5: Сон
-
 async def adding_sleep(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Записываем, сколько спал”””
 try:
 sleep_hours = float(update.message.text)
 context.user_data[‘entry’][‘sleep’] = sleep_hours
 
 ```
-    # Анализ сна
     if sleep_hours >= 7.5:
         emoji = "🟢"
         analysis = f"_{sleep_hours} часов\\. Отлично спал\\!_"
@@ -275,17 +231,14 @@ context.user_data[‘entry’][‘sleep’] = sleep_hours
         emoji = "🔴"
         analysis = f"_{sleep_hours} часов\\. Очень мало для развития мозга\\!_"
     
-    # Сохраняем запись
     diary = load_diary()
     date = datetime.now().strftime("%Y-%m-%d")
     diary[date] = context.user_data['entry']
     save_diary(diary)
     
-    # Показываем итоговую запись
     entry = context.user_data['entry']
     
-    # Экранируем текст для Markdown V2
-    good_escaped = escape_markdown(entry['good'][:100])  # Первые 100 символов
+    good_escaped = escape_markdown(entry['good'][:100])
     better_escaped = escape_markdown(entry['better'][:100])
     
     summary = (
@@ -299,7 +252,6 @@ context.user_data[‘entry’][‘sleep’] = sleep_hours
         f"*💤 Спал:* `{entry['sleep']} ч`"
     )
     
-    # Отправляем стикер
     await update.message.reply_sticker(STICKER_ID)
     
     await update.message.reply_text(
@@ -317,11 +269,7 @@ except ValueError:
     return ADDING_SLEEP
 ```
 
-# СТАТИСТИКА
-
 async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Показываем статистику”””
-# Отправляем стикер
 await update.message.reply_sticker(STICKER_ID)
 
 ```
@@ -339,17 +287,14 @@ if not diary:
     await main_menu(update, context)
     return CHOOSING_ACTION
 
-# Считаем статистику
 tiktok_total = sum(entry.get('tiktok', 0) for entry in diary.values())
 read_total = sum(entry.get('read', 0) for entry in diary.values())
 sleep_total = sum(entry.get('sleep', 0) for entry in diary.values())
 sleep_avg = sleep_total / len(diary) if diary else 0
 entries_count = len(diary)
 
-# Среднее TikTok в день
 tiktok_avg = tiktok_total // entries_count if entries_count > 0 else 0
 
-# Анализ
 stats_text = (
     "*📊 СТАТИСТИКА*\n\n"
     f"*Дней записей:* `{entries_count}`\n"
@@ -358,7 +303,6 @@ stats_text = (
     f"*💤 Спал всего:* `{sleep_total:.1f} часов` `({sleep_avg:.1f} ч/день)`\n\n"
 )
 
-# Оценка
 if tiktok_avg <= 60:
     stats_text += "> 🟢 *TikTok под контролем\\!*\n"
 elif tiktok_avg <= 120:
@@ -382,11 +326,7 @@ await main_menu(update, context)
 return CHOOSING_ACTION
 ```
 
-# ИСТОРИЯ
-
 async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Показываем последние записи”””
-# Отправляем стикер
 await update.message.reply_sticker(STICKER_ID)
 
 ```
@@ -404,8 +344,7 @@ if not diary:
     await main_menu(update, context)
     return CHOOSING_ACTION
 
-# Сортируем по дате (новые сверху)
-sorted_dates = sorted(diary.keys(), reverse=True)[:7]  # Последние 7 дней
+sorted_dates = sorted(diary.keys(), reverse=True)[:7]
 
 history_text = "*📖 ПОСЛЕДНИЕ ЗАПИСИ*\n\n"
 
@@ -429,10 +368,7 @@ await main_menu(update, context)
 return CHOOSING_ACTION
 ```
 
-# ВЫХОД
-
 async def exit_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Выход”””
 exit_text = (
 “*👋 До встречи\!*\n\n”
 “*Продолжай развиваться\!*\n\n”
@@ -448,10 +384,7 @@ await update.message.reply_text(
 return ConversationHandler.END
 ```
 
-# ОБРАБОТКА ВЫБОРА ДЕЙСТВИЯ
-
 async def handle_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-“”“Обработка выбора в главном меню”””
 text = update.message.text
 
 ```
@@ -475,22 +408,16 @@ else:
     return CHOOSING_ACTION
 ```
 
-# ГЛАВНАЯ ФУНКЦИЯ
-
 def main():
-“”“Запуск бота”””
-# ТУТ ВСТАВЛЯЙ СВОЙ TOKEN (получи у @BotFather в Telegram)
-TOKEN = “8570911226:AAEfa7tZquibcUh8HzCOrxZBQ-a5vwH84kA”
+TOKEN = os.getenv(“TOKEN”)
 
 ```
-if TOKEN == "ВСТАВЬ_СВОЙ_TOKEN_ЗДЕСЬ":
-    print("❌ ОШИБКА: Замени TOKEN на свой! (получи у @BotFather)")
+if not TOKEN:
+    print("ERROR: TOKEN not set in environment variables")
     return
 
-# Создаём приложение (это основной класс бота)
 app = Application.builder().token(TOKEN).build()
 
-# Создаём ConversationHandler (это управляет диалогом)
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("start", start)],
     states={
@@ -504,11 +431,9 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("start", start)],
 )
 
-# Добавляем обработчик
 app.add_handler(conv_handler)
 
-# Запускаем бота
-print("✅ Бот запущен! Нажми Ctrl+C для остановки.")
+print("Bot is running...")
 app.run_polling()
 ```
 
