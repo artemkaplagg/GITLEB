@@ -2,6 +2,7 @@ import json
 import os
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, Any
 
@@ -14,7 +15,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from telegram.error import TelegramError
+from telegram.error import TelegramError, Conflict
 
 # ================== LOGGING ==================
 
@@ -33,10 +34,10 @@ DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 USERS_FILE_PATH = DATA_DIR / USERS_FILE
 
-# Images
-IMG_MAIN_MENU = "https://i.ibb.co/1sKjVzT/main-menu.jpg"
-IMG_LOGIN = "https://i.ibb.co/0jQY0hH/login.jpg"
-IMG_CONNECT = "https://i.ibb.co/4YgK8Rg/connect.jpg"
+# Временное решение: убраны фото, чтобы избежать ошибок
+IMG_MAIN_MENU = None
+IMG_LOGIN = None
+IMG_CONNECT = None
 
 # States
 (
@@ -106,7 +107,7 @@ class Messages:
     """Шаблоны сообщений"""
 
     REGISTRATION_WELCOME = (
-        "ВХОД В КАБИНЕТ\n\n"
+        "🎯 ВХОД В КАБИНЕТ\n\n"
         "Чтобы продолжить, нужно зарегистрироваться.\n\n"
         "Введите ваше имя:"
     )
@@ -114,25 +115,25 @@ class Messages:
     ASK_AGE = "Введите ваш возраст:"
 
     ASK_GOAL = (
-        "Ваша главная цель?\n\n"
+        "🎯 Ваша главная цель?\n\n"
         "Пример: дисциплина, учёба, здоровье"
     )
 
     INVALID_AGE = "Введите корректный возраст (число)."
 
-    CONNECTING = "Подключение...\nПожалуйста, подождите"
+    CONNECTING = "⚡ Подключение...\nПожалуйста, подождите"
 
-    MAIN_MENU_CAPTION = "Главное меню\nВыберите действие"
+    MAIN_MENU_CAPTION = "🏠 Главное меню\nВыберите действие"
 
     NEW_RECORD = "📝 Функция создания записи в разработке."
     STATISTICS = "📊 Скоро будет красивая статистика."
     HISTORY = "📖 История пока пуста."
 
-    LOGOUT = "Вы вышли.\nВведите /start чтобы вернуться."
+    LOGOUT = "👋 Вы вышли.\nВведите /start чтобы вернуться."
 
     INVALID_MENU = "Выберите пункт меню."
 
-    ERROR = "Произошла ошибка. Попробуйте позже или введите /start"
+    ERROR = "⚠ Произошла ошибка. Попробуйте позже или введите /start"
 
 
 # ================== HANDLERS ==================
@@ -150,9 +151,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await show_main_menu(update, context)
         
         # Новый пользователь - начинаем регистрацию
-        msg = await update.message.reply_photo(
-            photo=IMG_LOGIN,
-            caption=Messages.REGISTRATION_WELCOME,
+        msg = await update.message.reply_text(
+            Messages.REGISTRATION_WELCOME,
         )
         
         context.user_data["register_message_id"] = msg.message_id
@@ -172,7 +172,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ввода имени"""
     try:
-        # Удаляем фото регистрации
+        # Удаляем сообщение регистрации
         if "register_message_id" in context.user_data:
             try:
                 await context.bot.delete_message(
@@ -246,12 +246,11 @@ async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
         # Экран подключения
-        connect_msg = await update.message.reply_photo(
-            photo=IMG_CONNECT,
-            caption=Messages.CONNECTING
+        connect_msg = await update.message.reply_text(
+            Messages.CONNECTING
         )
 
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
 
         # Удаляем сообщение подключения
         try:
@@ -279,38 +278,21 @@ async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать главное меню"""
     try:
-        # Проверяем, есть ли сообщение для ответа (update.message может отсутствовать при вызове из ask_goal)
-        if update.message:
-            await update.message.reply_photo(
-                photo=IMG_MAIN_MENU,
-                caption=Messages.MAIN_MENU_CAPTION,
-                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
-            )
-        else:
-            # Если вызывается из ask_goal, используем context для отправки
-            await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
-                photo=IMG_MAIN_MENU,
-                caption=Messages.MAIN_MENU_CAPTION,
-                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
-            )
-        return MAIN_MENU
-
-    except TelegramError as e:
-        logger.error(f"Ошибка при показе меню: {e}")
-        # Если не удалось отправить фото, отправляем текстовое меню
+        # Отправляем текстовое меню (без фото)
         if update.message:
             await update.message.reply_text(
                 Messages.MAIN_MENU_CAPTION,
                 reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
             )
         else:
+            # Если вызывается из ask_goal, используем context для отправки
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=Messages.MAIN_MENU_CAPTION,
                 reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
             )
         return MAIN_MENU
+
     except Exception as e:
         logger.error(f"Неожиданная ошибка в show_main_menu: {e}")
         if update.message:
@@ -349,14 +331,22 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(Messages.INVALID_MENU)
             return MAIN_MENU
 
-    except TelegramError as e:
-        logger.error(f"Ошибка Telegram в handle_menu: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return MAIN_MENU
     except Exception as e:
         logger.error(f"Ошибка в handle_menu: {e}")
         await update.message.reply_text(Messages.ERROR)
         return MAIN_MENU
+
+
+# ================== ОБРАБОТЧИК ОШИБОК ==================
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ошибок"""
+    logger.error(f"Ошибка при обработке сообщения: {context.error}", exc_info=context.error)
+    
+    # Если это конфликт, просто логируем
+    if isinstance(context.error, Conflict):
+        logger.warning("Обнаружен конфликт. Вероятно, запущено несколько инстансов бота.")
+        return
 
 
 # ================== MAIN ==================
@@ -368,6 +358,9 @@ def main():
             raise ValueError("Установите корректный токен в TOKEN или переменной TELEGRAM_TOKEN")
 
         app = Application.builder().token(TOKEN).build()
+        
+        # Добавляем обработчик ошибок
+        app.add_error_handler(error_handler)
 
         conv = ConversationHandler(
             entry_points=[CommandHandler("start", start)],
@@ -383,14 +376,19 @@ def main():
         app.add_handler(conv)
 
         logger.info("🤖 Бот запущен и готов к работе")
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+        # Запускаем polling с очисткой старых обновлений
+        app.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
 
     except ValueError as e:
         logger.error(f"Ошибка конфигурации: {e}")
-        raise
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
-        raise
+        sys.exit(1)
 
 
 if __name__ == "__main__":
