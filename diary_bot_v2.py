@@ -1,395 +1,413 @@
-import json
-import os
-import asyncio
+#!/usr/bin/env python3
+“””
+Casino Bot для Telegram - использует встроенные игры ТГ
+Автоматически обрабатывает результаты из Telegram Game API
+“””
+
 import logging
-import sys
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.constants import DiceEmoji
+import json
 from pathlib import Path
-from typing import Dict, Any
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ConversationHandler,
-    ContextTypes,
-    filters,
-)
-from telegram.error import TelegramError, Conflict
-
-# ================== LOGGING ==================
+# Логирование
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+format=’%(asctime)s - %(name)s - %(levelname)s - %(message)s’,
+level=logging.INFO
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(**name**)
 
-# ================== CONFIG ==================
+# Файл для сохранения баланса пользователей
 
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8570911226:AAEfa7tZquibcUh8HzCOrxZBQ-a5vwH84kA")
+USERS_FILE = “users_balance.json”
 
-USERS_FILE = "users.json"
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
-USERS_FILE_PATH = DATA_DIR / USERS_FILE
+class CasinoBot:
+def **init**(self):
+self.users = self.load_users()
+self.games_config = {
+“slots”: {“emoji”: “🎰”, “name”: “Слоты”, “cost”: 10, “multiplier”: 0.95},
+“dice”: {“emoji”: “🎲”, “name”: “Кубик”, “cost”: 10, “multiplier”: 0.95},
+“dart”: {“emoji”: “🎯”, “name”: “Дартс”, “cost”: 10, “multiplier”: 0.95},
+“basketball”: {“emoji”: “🏀”, “name”: “Баскетбол”, “cost”: 10, “multiplier”: 0.95},
+}
+self.winnings = {
+“slots”: {
+“🍒🍒🍒”: 100,
+“🍋🍋🍋”: 150,
+“🍓🍓🍓”: 200,
+“🍌🍌🍌”: 120,
+“⭐⭐⭐”: 300,
+“🔔🔔🔔”: 250,
+“💰💰💰”: 500,
+“7️⃣7️⃣7️⃣”: 1000,
+},
+“dice”: {
+6: 60,
+5: 50,
+4: 40,
+3: 30,
+2: 20,
+1: 10,
+}
+}
 
-# Временное решение: убраны фото, чтобы избежать ошибок
-IMG_MAIN_MENU = None
-IMG_LOGIN = None
-IMG_CONNECT = None
+```
+def load_users(self):
+    """Загружает баланс пользователей из файла"""
+    if Path(USERS_FILE).exists():
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    return {}
 
-# States
-(
-    ASK_NAME,
-    ASK_AGE,
-    ASK_GOAL,
-) = range(3)
+def save_users(self):
+    """Сохраняет баланс пользователей"""
+    with open(USERS_FILE, 'w') as f:
+        json.dump(self.users, f, indent=2)
 
-MAIN_MENU = 10
+def get_user_balance(self, user_id: int) -> int:
+    """Получает баланс пользователя"""
+    user_id_str = str(user_id)
+    if user_id_str not in self.users:
+        self.users[user_id_str] = {"balance": 1000, "total_wins": 0, "total_spent": 0}
+        self.save_users()
+    return self.users[user_id_str]["balance"]
 
-# Keyboard layouts
-MAIN_KEYBOARD = [
-    ["📝 Новая запись"],
-    ["📊 Статистика", "📖 История"],
-    ["❌ Выход"],
-]
+def update_balance(self, user_id: int, amount: int):
+    """Обновляет баланс пользователя"""
+    user_id_str = str(user_id)
+    if user_id_str not in self.users:
+        self.get_user_balance(user_id)
+    
+    self.users[user_id_str]["balance"] += amount
+    if amount > 0:
+        self.users[user_id_str]["total_wins"] += amount
+    else:
+        self.users[user_id_str]["total_spent"] += abs(amount)
+    self.save_users()
 
-# ================== STORAGE ==================
+def get_main_menu(self) -> InlineKeyboardMarkup:
+    """Создает главное меню с кнопками игр"""
+    buttons = [
+        [
+            InlineKeyboardButton("🎰 Слоты", callback_data="game_slots"),
+            InlineKeyboardButton("🎲 Кубик", callback_data="game_dice"),
+        ],
+        [
+            InlineKeyboardButton("🎯 Дартс", callback_data="game_dart"),
+            InlineKeyboardButton("🏀 Баскетбол", callback_data="game_basketball"),
+        ],
+        [
+            InlineKeyboardButton("💰 Баланс", callback_data="balance"),
+            InlineKeyboardButton("📊 Статистика", callback_data="stats"),
+        ],
+    ]
+    return InlineKeyboardMarkup(buttons)
 
-class UserStorage:
-    """Управление хранилищем пользователей"""
+def get_bet_menu(self, game: str) -> InlineKeyboardMarkup:
+    """Меню выбора ставки"""
+    buttons = [
+        [
+            InlineKeyboardButton("10 🪙", callback_data=f"bet_10_{game}"),
+            InlineKeyboardButton("50 🪙", callback_data=f"bet_50_{game}"),
+            InlineKeyboardButton("100 🪙", callback_data=f"bet_100_{game}"),
+        ],
+        [
+            InlineKeyboardButton("500 🪙", callback_data=f"bet_500_{game}"),
+            InlineKeyboardButton("1000 🪙", callback_data=f"bet_1000_{game}"),
+        ],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="back")],
+    ]
+    return InlineKeyboardMarkup(buttons)
+```
 
-    @staticmethod
-    def load_users() -> Dict[str, Dict[str, Any]]:
-        """Загрузить пользователей из файла"""
-        try:
-            if USERS_FILE_PATH.exists():
-                with open(USERS_FILE_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Ошибка при загрузке пользователей: {e}")
-        return {}
+# Инициализируем бота
 
-    @staticmethod
-    def save_users(data: Dict[str, Dict[str, Any]]) -> bool:
-        """Сохранить пользователей в файл"""
-        try:
-            with open(USERS_FILE_PATH, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            return True
-        except IOError as e:
-            logger.error(f"Ошибка при сохранении пользователей: {e}")
-            return False
-
-    @staticmethod
-    def user_exists(user_id: str) -> bool:
-        """Проверить существование пользователя"""
-        return user_id in UserStorage.load_users()
-
-    @staticmethod
-    def get_user(user_id: str) -> Dict[str, Any] | None:
-        """Получить данные пользователя"""
-        users = UserStorage.load_users()
-        return users.get(user_id)
-
-    @staticmethod
-    def save_user(user_id: str, user_data: Dict[str, Any]) -> bool:
-        """Сохранить данные пользователя"""
-        users = UserStorage.load_users()
-        users[user_id] = user_data
-        return UserStorage.save_users(users)
-
-
-# ================== MESSAGE TEMPLATES ==================
-
-class Messages:
-    """Шаблоны сообщений"""
-
-    REGISTRATION_WELCOME = (
-        "🎯 ВХОД В КАБИНЕТ\n\n"
-        "Чтобы продолжить, нужно зарегистрироваться.\n\n"
-        "Введите ваше имя:"
-    )
-
-    ASK_AGE = "Введите ваш возраст:"
-
-    ASK_GOAL = (
-        "🎯 Ваша главная цель?\n\n"
-        "Пример: дисциплина, учёба, здоровье"
-    )
-
-    INVALID_AGE = "Введите корректный возраст (число)."
-
-    CONNECTING = "⚡ Подключение...\nПожалуйста, подождите"
-
-    MAIN_MENU_CAPTION = "🏠 Главное меню\nВыберите действие"
-
-    NEW_RECORD = "📝 Функция создания записи в разработке."
-    STATISTICS = "📊 Скоро будет красивая статистика."
-    HISTORY = "📖 История пока пуста."
-
-    LOGOUT = "👋 Вы вышли.\nВведите /start чтобы вернуться."
-
-    INVALID_MENU = "Выберите пункт меню."
-
-    ERROR = "⚠ Произошла ошибка. Попробуйте позже или введите /start"
-
-
-# ================== HANDLERS ==================
+casino = CasinoBot()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start"""
-    try:
-        user_id = str(update.effective_user.id)
+“”“Стартовая команда”””
+user_id = update.effective_user.id
+casino.get_user_balance(user_id)
 
-        # Очищаем старые данные
-        context.user_data.clear()
-        
-        # Если пользователь уже зарегистрирован
-        if UserStorage.user_exists(user_id):
-            return await show_main_menu(update, context)
-        
-        # Новый пользователь - начинаем регистрацию
-        msg = await update.message.reply_text(
-            Messages.REGISTRATION_WELCOME,
-        )
-        
-        context.user_data["register_message_id"] = msg.message_id
-        context.user_data["registration_started"] = True
-        return ASK_NAME
-        
-    except TelegramError as e:
-        logger.error(f"Ошибка Telegram при /start: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return ConversationHandler.END
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка в start: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return ConversationHandler.END
+```
+welcome_text = (
+    f"🎰 **Добро пожаловать в Casino Bot!** 🎰\n\n"
+    f"Начальный баланс: **1000 🪙**\n\n"
+    f"Выбери игру и начни выигрывать!\n"
+    f"Удачи, {update.effective_user.first_name}!"
+)
 
+await update.message.reply_text(
+    welcome_text,
+    reply_markup=casino.get_main_menu(),
+    parse_mode="Markdown"
+)
+```
 
-async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик ввода имени"""
-    try:
-        # Удаляем сообщение регистрации
-        if "register_message_id" in context.user_data:
-            try:
-                await context.bot.delete_message(
-                    chat_id=update.effective_chat.id,
-                    message_id=context.user_data["register_message_id"],
-                )
-                del context.user_data["register_message_id"]
-            except TelegramError as e:
-                logger.warning(f"Не удалось удалить сообщение регистрации: {e}")
-        
-        name = update.message.text.strip()
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+“”“Обработчик всех кнопок”””
+query = update.callback_query
+await query.answer()
 
-        if not name or len(name) < 2:
-            await update.message.reply_text("Введите корректное имя (минимум 2 символа).")
-            return ASK_NAME
+```
+user_id = query.from_user.id
+current_balance = casino.get_user_balance(user_id)
+data = query.data
 
-        context.user_data["name"] = name
-        await update.message.reply_text(Messages.ASK_AGE)
-        return ASK_AGE
+# Команда: Назад в меню
+if data == "back":
+    await query.edit_message_text(
+        text="🎰 **Выбери игру:**",
+        reply_markup=casino.get_main_menu(),
+        parse_mode="Markdown"
+    )
+    return
 
-    except Exception as e:
-        logger.error(f"Ошибка в ask_name: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return ConversationHandler.END
+# Команда: Баланс
+if data == "balance":
+    balance_text = f"💰 **Твой баланс: {current_balance} 🪙**"
+    await query.edit_message_text(
+        text=balance_text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="back")]]),
+        parse_mode="Markdown"
+    )
+    return
 
+# Команда: Статистика
+if data == "stats":
+    user_data = casino.users[str(user_id)]
+    stats_text = (
+        f"📊 **Твоя Статистика:**\n\n"
+        f"💰 Текущий баланс: {user_data['balance']} 🪙\n"
+        f"✅ Общие выигрыши: {user_data['total_wins']} 🪙\n"
+        f"❌ Общие потери: {user_data['total_spent']} 🪙\n"
+        f"📈 Баланс от начала: {user_data['balance'] - 1000 + user_data['total_spent']} 🪙"
+    )
+    await query.edit_message_text(
+        text=stats_text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data="back")]]),
+        parse_mode="Markdown"
+    )
+    return
 
-async def ask_age(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик ввода возраста"""
-    try:
-        age_text = update.message.text.strip()
-
-        if not age_text.isdigit():
-            await update.message.reply_text(Messages.INVALID_AGE)
-            return ASK_AGE
-
-        age = int(age_text)
-
-        if age < 1 or age > 150:
-            await update.message.reply_text("Введите реалистичный возраст (1-150).")
-            return ASK_AGE
-
-        context.user_data["age"] = age
-        await update.message.reply_text(Messages.ASK_GOAL)
-        return ASK_GOAL
-
-    except Exception as e:
-        logger.error(f"Ошибка в ask_age: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return ConversationHandler.END
-
-
-async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик ввода цели"""
-    try:
-        user_id = str(update.effective_user.id)
-        goal = update.message.text.strip()
-
-        if not goal or len(goal) < 3:
-            await update.message.reply_text("Введите корректную цель (минимум 3 символа).")
-            return ASK_GOAL
-
-        # Сохраняем данные пользователя
-        user_data = {
-            "name": context.user_data["name"],
-            "age": context.user_data["age"],
-            "goal": goal,
-        }
-
-        if not UserStorage.save_user(user_id, user_data):
-            await update.message.reply_text(Messages.ERROR)
-            return ConversationHandler.END
-
-        # Экран подключения
-        connect_msg = await update.message.reply_text(
-            Messages.CONNECTING
-        )
-
-        await asyncio.sleep(2)
-
-        # Удаляем сообщение подключения
-        try:
-            await context.bot.delete_message(
-                chat_id=update.effective_chat.id,
-                message_id=connect_msg.message_id,
-            )
-        except TelegramError as e:
-            logger.warning(f"Не удалось удалить сообщение подключения: {e}")
-
-        # Очищаем временные данные
-        if "registration_started" in context.user_data:
-            del context.user_data["registration_started"]
-            
-        return await show_main_menu(update, context)
-
-    except Exception as e:
-        logger.error(f"Ошибка в ask_goal: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return ConversationHandler.END
-
-
-# ================== MAIN MENU ==================
-
-async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать главное меню"""
-    try:
-        # Отправляем текстовое меню (без фото)
-        if update.message:
-            await update.message.reply_text(
-                Messages.MAIN_MENU_CAPTION,
-                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
-            )
-        else:
-            # Если вызывается из ask_goal, используем context для отправки
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=Messages.MAIN_MENU_CAPTION,
-                reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
-            )
-        return MAIN_MENU
-
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка в show_main_menu: {e}")
-        if update.message:
-            await update.message.reply_text(Messages.ERROR)
-        else:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=Messages.ERROR,
-            )
-        return ConversationHandler.END
-
-
-async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик меню"""
-    try:
-        text = update.message.text.strip()
-
-        menu_handlers = {
-            "📝 Новая запись": Messages.NEW_RECORD,
-            "📊 Статистика": Messages.STATISTICS,
-            "📖 История": Messages.HISTORY,
-        }
-
-        if text in menu_handlers:
-            await update.message.reply_text(menu_handlers[text])
-            return MAIN_MENU
-
-        elif text == "❌ Выход":
-            await update.message.reply_text(
-                Messages.LOGOUT,
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            return ConversationHandler.END
-
-        else:
-            await update.message.reply_text(Messages.INVALID_MENU)
-            return MAIN_MENU
-
-    except Exception as e:
-        logger.error(f"Ошибка в handle_menu: {e}")
-        await update.message.reply_text(Messages.ERROR)
-        return MAIN_MENU
-
-
-# ================== ОБРАБОТЧИК ОШИБОК ==================
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик ошибок"""
-    logger.error(f"Ошибка при обработке сообщения: {context.error}", exc_info=context.error)
+# Выбор игры
+if data.startswith("game_"):
+    game = data.split("_")[1]
+    game_name = casino.games_config[game]["name"]
+    game_emoji = casino.games_config[game]["emoji"]
     
-    # Если это конфликт, просто логируем
-    if isinstance(context.error, Conflict):
-        logger.warning("Обнаружен конфликт. Вероятно, запущено несколько инстансов бота.")
+    text = f"{game_emoji} **{game_name}**\n\nВыбери размер ставки:"
+    await query.edit_message_text(
+        text=text,
+        reply_markup=casino.get_bet_menu(game),
+        parse_mode="Markdown"
+    )
+    return
+
+# Выбор ставки и запуск игры
+if data.startswith("bet_"):
+    parts = data.split("_")
+    bet_amount = int(parts[1])
+    game = parts[2]
+
+    # Проверка баланса
+    if current_balance < bet_amount:
+        await query.answer("❌ Недостаточно денег!", show_alert=True)
         return
 
+    # Снимаем ставку
+    casino.update_balance(user_id, -bet_amount)
 
-# ================== MAIN ==================
+    # Запускаем игру
+    if game == "slots":
+        await context.bot.send_dice(
+            chat_id=query.message.chat_id,
+            emoji=DiceEmoji.SLOT_MACHINE,
+            reply_to_message_id=query.message.message_id
+        )
+        # Сохраняем информацию о текущей игре в контексте
+        context.user_data['last_bet'] = bet_amount
+        context.user_data['last_game'] = 'slots'
+
+    elif game == "dice":
+        await context.bot.send_dice(
+            chat_id=query.message.chat_id,
+            emoji=DiceEmoji.DICE,
+            reply_to_message_id=query.message.message_id
+        )
+        context.user_data['last_bet'] = bet_amount
+        context.user_data['last_game'] = 'dice'
+
+    elif game == "dart":
+        await context.bot.send_dice(
+            chat_id=query.message.chat_id,
+            emoji=DiceEmoji.DARTS,
+            reply_to_message_id=query.message.message_id
+        )
+        context.user_data['last_bet'] = bet_amount
+        context.user_data['last_game'] = 'dart'
+
+    elif game == "basketball":
+        await context.bot.send_dice(
+            chat_id=query.message.chat_id,
+            emoji=DiceEmoji.BASKETBALL,
+            reply_to_message_id=query.message.message_id
+        )
+        context.user_data['last_bet'] = bet_amount
+        context.user_data['last_game'] = 'basketball'
+
+    await query.edit_message_text(
+        text=f"🎮 Игра запущена!\n\nТвоя ставка: {bet_amount} 🪙",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Меню", callback_data="back")]])
+    )
+```
+
+async def dice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+“”“Обработчик результатов игры”””
+user_id = update.effective_user.id
+
+```
+if update.message.dice:
+    dice_value = update.message.dice.value
+    game_emoji = update.message.dice.emoji
+    
+    # Получаем информацию о последней ставке
+    last_bet = context.user_data.get('last_bet', 0)
+    last_game = context.user_data.get('last_game', '')
+
+    # Определяем выигрыш в зависимости от типа игры
+    winnings = 0
+
+    if game_emoji == DiceEmoji.SLOT_MACHINE:
+        # Для слотов ТГ возвращает значение 1-64 (8x8)
+        # Каждое число соответствует комбинации символов
+        if dice_value == 64:  # ТГ редко дает максимум
+            winnings = last_bet * 10
+            result_text = "🏆 **ДЖЕКПОТ!!!** 💰💰💰"
+        elif dice_value >= 50:
+            winnings = last_bet * 5
+            result_text = "🎉 **Большой выигрыш!**"
+        elif dice_value >= 35:
+            winnings = last_bet * 2
+            result_text = "✅ **Выигрыш!**"
+        elif dice_value >= 20:
+            winnings = last_bet
+            result_text = "👍 **Небольшой выигрыш**"
+        else:
+            result_text = "❌ **Проигрыш**"
+
+    elif game_emoji == DiceEmoji.DICE:
+        # Кубик: 1-6
+        if dice_value == 6:
+            winnings = last_bet * 6
+            result_text = "🏆 **КРИТИЧЕСКИЙ БРОСОК!** ⭐"
+        elif dice_value == 5:
+            winnings = last_bet * 4
+            result_text = "🎉 **Отличный бросок!**"
+        elif dice_value == 4:
+            winnings = last_bet * 2
+            result_text = "✅ **Выигрыш!**"
+        elif dice_value == 3:
+            winnings = last_bet
+            result_text = "👍 **Небольшой выигрыш**"
+        else:
+            result_text = "❌ **Проигрыш**"
+
+    elif game_emoji == DiceEmoji.DARTS:
+        # Дартс: 1-6 (количество попаданий)
+        if dice_value == 6:
+            winnings = last_bet * 8
+            result_text = "🏆 **ИДЕАЛЬНО!** 🎯🎯🎯"
+        elif dice_value >= 5:
+            winnings = last_bet * 4
+            result_text = "🎉 **Почти идеально!**"
+        elif dice_value >= 3:
+            winnings = last_bet * 2
+            result_text = "✅ **Хороший бросок!**"
+        elif dice_value == 2:
+            winnings = last_bet
+            result_text = "👍 **Попали!**"
+        else:
+            result_text = "❌ **Промах**"
+
+    elif game_emoji == DiceEmoji.BASKETBALL:
+        # Баскетбол: 1-5
+        if dice_value == 5:
+            winnings = last_bet * 6
+            result_text = "🏆 **БРОСОК С ЦЕНТРА ПЛОЩАДКИ!** 🏀🏀"
+        elif dice_value == 4:
+            winnings = last_bet * 4
+            result_text = "🎉 **Отличный бросок!**"
+        elif dice_value == 3:
+            winnings = last_bet * 2
+            result_text = "✅ **Попадание!**"
+        elif dice_value == 2:
+            winnings = last_bet
+            result_text = "👍 **Забил!**"
+        else:
+            result_text = "❌ **Не забил**"
+
+    else:
+        result_text = "❓ Неизвестная игра"
+
+    # Обновляем баланс
+    if winnings > 0:
+        casino.update_balance(user_id, winnings)
+        current_balance = casino.get_user_balance(user_id)
+        message_text = (
+            f"{result_text}\n\n"
+            f"🎯 Результат: **{dice_value}**\n"
+            f"💰 Выигрыш: +{winnings} 🪙\n"
+            f"💵 Новый баланс: {current_balance} 🪙"
+        )
+    else:
+        current_balance = casino.get_user_balance(user_id)
+        message_text = (
+            f"{result_text}\n\n"
+            f"🎯 Результат: **{dice_value}**\n"
+            f"💸 Потеря: -{last_bet} 🪙\n"
+            f"💵 Новый баланс: {current_balance} 🪙"
+        )
+
+    # Отправляем результат
+    buttons = [
+        [InlineKeyboardButton("🎮 Еще раз", callback_data=f"game_{last_game}")],
+        [InlineKeyboardButton("🏠 Меню", callback_data="back")],
+    ]
+    
+    await update.message.reply_text(
+        text=message_text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        parse_mode="Markdown"
+    )
+```
 
 def main():
-    """Запуск бота"""
-    try:
-        if TOKEN == "PASTE_YOUR_TOKEN_HERE":
-            raise ValueError("Установите корректный токен в TOKEN или переменной TELEGRAM_TOKEN")
+“”“Главная функция”””
+# Вставьте ваш токен здесь
+TOKEN = “ВАШ_ТОКЕН_ТГ”
 
-        app = Application.builder().token(TOKEN).build()
-        
-        # Добавляем обработчик ошибок
-        app.add_error_handler(error_handler)
+```
+# Если токена нет, просим его ввести
+if TOKEN == "ВАШ_ТОКЕН_ТГ":
+    print("❌ Ошибка: укажите TOKEN в коде!")
+    print("Получить токен: https://t.me/BotFather")
+    return
 
-        conv = ConversationHandler(
-            entry_points=[CommandHandler("start", start)],
-            states={
-                ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
-                ASK_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_age)],
-                ASK_GOAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_goal)],
-                MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu)],
-            },
-            fallbacks=[CommandHandler("start", start)],
-        )
+# Создаем приложение
+app = Application.builder().token(TOKEN).build()
 
-        app.add_handler(conv)
+# Обработчики
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CallbackQueryHandler(button_handler))
+app.add_handler(MessageHandler(filters.Dice(), dice_handler))
 
-        logger.info("🤖 Бот запущен и готов к работе")
-        
-        # Запускаем polling с очисткой старых обновлений
-        app.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
+# Запускаем бота
+print("✅ Casino Bot запущен!")
+app.run_polling(allowed_updates=Update.ALL_TYPES)
+```
 
-    except ValueError as e:
-        logger.error(f"Ошибка конфигурации: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+if **name** == “**main**”:
+main()
