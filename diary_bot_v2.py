@@ -1,441 +1,361 @@
 import json
 import os
-from datetime import datetime
+import asyncio
+import logging
+from pathlib import Path
+from typing import Dict, Any
+
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.constants import ParseMode
 from telegram.ext import (
-Application, CommandHandler, MessageHandler, ConversationHandler,
-ContextTypes, filters
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ConversationHandler,
+    ContextTypes,
+    filters,
 )
+from telegram.error import TelegramError
 
-DIARY_FILE = “diary_data.json”
-STICKER_ID = “CAACAgQAAxkBAAEQY2ZpfebQk4Af9-103htwFhoVEm-H7gACugwAAksGmFH416EKFkWuhDgE”
+# ================== LOGGING ==================
 
-CHOOSING_ACTION = 1
-ADDING_GOOD = 2
-ADDING_BETTER = 3
-ADDING_TIKTOK = 4
-ADDING_READ = 5
-ADDING_SLEEP = 6
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def load_diary():
-if os.path.exists(DIARY_FILE):
-with open(DIARY_FILE, “r”, encoding=“utf-8”) as f:
-return json.load(f)
-return {}
+# ================== CONFIG ==================
 
-def save_diary(data):
-with open(DIARY_FILE, “w”, encoding=“utf-8”) as f:
-json.dump(data, f, ensure_ascii=False, indent=2)
+TOKEN = os.getenv("TELEGRAM_TOKEN", "8570911226:AAEfa7tZquibcUh8HzCOrxZBQ-a5vwH84kA")
 
-def escape_markdown(text):
-special_chars = [’_’, ‘*’, ‘[’, ‘]’, ‘(’, ‘)’, ‘~’, ‘`’, ‘>’, ‘#’, ‘+’, ‘-’, ‘=’, ‘|’, ‘{’, ‘}’, ‘.’, ‘!’]
-for char in special_chars:
-text = text.replace(char, f’\{char}’)
-return text
+USERS_FILE = "users.json"
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+USERS_FILE_PATH = DATA_DIR / USERS_FILE
+
+# Images
+IMG_MAIN_MENU = "https://ibb.co/ycP5Xjfg"
+IMG_LOGIN = "https://ibb.co/j9mWj9Qw"
+IMG_CONNECT = "https://ibb.co/YTTpMhj2"
+
+# States
+(
+    ASK_NAME,
+    ASK_AGE,
+    ASK_GOAL,
+) = range(3)
+
+MAIN_MENU = 10
+
+# Keyboard layouts
+MAIN_KEYBOARD = [
+    ["📝 Новая запись"],
+    ["📊 Статистика", "📖 История"],
+    ["❌ Выход"],
+]
+
+# ================== STORAGE ==================
+
+class UserStorage:
+    """Управление хранилищем пользователей"""
+
+    @staticmethod
+    def load_users() -> Dict[str, Dict[str, Any]]:
+        """Загрузить пользователей из файла"""
+        try:
+            if USERS_FILE_PATH.exists():
+                with open(USERS_FILE_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Ошибка при загрузке пользователей: {e}")
+        return {}
+
+    @staticmethod
+    def save_users(data: Dict[str, Dict[str, Any]]) -> bool:
+        """Сохранить пользователей в файл"""
+        try:
+            with open(USERS_FILE_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except IOError as e:
+            logger.error(f"Ошибка при сохранении пользователей: {e}")
+            return False
+
+    @staticmethod
+    def user_exists(user_id: str) -> bool:
+        """Проверить существование пользователя"""
+        return user_id in UserStorage.load_users()
+
+    @staticmethod
+    def get_user(user_id: str) -> Dict[str, Any] | None:
+        """Получить данные пользователя"""
+        users = UserStorage.load_users()
+        return users.get(user_id)
+
+    @staticmethod
+    def save_user(user_id: str, user_data: Dict[str, Any]) -> bool:
+        """Сохранить данные пользователя"""
+        users = UserStorage.load_users()
+        users[user_id] = user_data
+        return UserStorage.save_users(users)
+
+
+# ================== MESSAGE TEMPLATES ==================
+
+class Messages:
+    """Шаблоны сообщений"""
+
+    REGISTRATION_WELCOME = (
+        "ВХОД В КАБИНЕТ\n\n"
+        "Чтобы продолжить, нужно зарегистрироваться.\n\n"
+        "Введите ваше имя:"
+    )
+
+    ASK_AGE = "Введите ваш возраст:"
+
+    ASK_GOAL = (
+        "Ваша главная цель?\n\n"
+        "Пример: дисциплина, учёба, здоровье"
+    )
+
+    INVALID_AGE = "Введите корректный возраст (число)."
+
+    CONNECTING = "Подключение...\nПожалуйста, подождите"
+
+    MAIN_MENU_CAPTION = "Главное меню\nВыберите действие"
+
+    NEW_RECORD = "📝 Функция создания записи в разработке."
+    STATISTICS = "📊 Скоро будет красивая статистика."
+    HISTORY = "📖 История пока пуста."
+
+    LOGOUT = "Вы вышли.\nВведите /start чтобы вернуться."
+
+    INVALID_MENU = "Выберите пункт меню."
+
+    ERROR = "Произошла ошибка. Попробуйте позже или введите /start"
+
+
+# ================== HANDLERS ==================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-await update.message.reply_sticker(STICKER_ID)
+    """Обработчик команды /start"""
+    try:
+        user_id = str(update.effective_user.id)
 
-```
-keyboard = [
-    ["📝 Добавить запись", "📊 Статистика"],
-    ["📖 История", "❌ Выход"]
-]
-reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        # Если пользователь уже зарегистрирован
+        if UserStorage.user_exists(user_id):
+            return await show_main_menu(update, context)
 
-welcome_text = (
-    "*🎯 Добро пожаловать в твой личный дневник\\!*\n\n"
-    "_Этот бот поможет тебе отслеживать прогресс и изменять жизнь_\n\n"
-    "*Что ты хочешь сделать\\?*"
-)
+        # Новый пользователь - начинаем регистрацию
+        msg = await update.message.reply_photo(
+            photo=IMG_LOGIN,
+            caption=Messages.REGISTRATION_WELCOME,
+        )
 
-await update.message.reply_text(
-    welcome_text,
-    reply_markup=reply_markup,
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-return CHOOSING_ACTION
-```
+        context.user_data["register_message_id"] = msg.message_id
+        return ASK_NAME
 
-async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-keyboard = [
-[“📝 Добавить запись”, “📊 Статистика”],
-[“📖 История”, “❌ Выход”]
-]
-reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    except TelegramError as e:
+        logger.error(f"Ошибка Telegram при /start: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка в start: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
 
-```
-menu_text = (
-    "*Вернулись в главное меню*\n\n"
-    "_Выбери действие_"
-)
 
-await update.message.reply_text(
-    menu_text,
-    reply_markup=reply_markup,
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-return CHOOSING_ACTION
-```
+async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ввода имени"""
+    try:
+        name = update.message.text.strip()
 
-async def add_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-await update.message.reply_sticker(STICKER_ID)
+        if not name or len(name) < 2:
+            await update.message.reply_text("Введите корректное имя (минимум 2 символа).")
+            return ASK_NAME
 
-```
-context.user_data['date'] = datetime.now().strftime("%Y\\-m\\-d")
-context.user_data['entry'] = {}
+        context.user_data["name"] = name
+        await update.message.reply_text(Messages.ASK_AGE)
+        return ASK_AGE
 
-date_display = datetime.now().strftime("%Y-%m-%d")
+    except Exception as e:
+        logger.error(f"Ошибка в ask_name: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
 
-prompt_text = (
-    f"*📝 Новая запись на {escape_markdown(date_display)}*\n\n"
-    "*Что ХОРОШЕГО ты сделал сегодня\\?*\n"
-    "_(Максимум 3 пункта, разделяй запятой)_\n\n"
-    "`Пример:`\n"
-    "_Не спал в TikTok, прочитал 20 страниц, поговорил с папой_"
-)
 
-await update.message.reply_text(
-    prompt_text,
-    reply_markup=ReplyKeyboardRemove(),
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-return ADDING_GOOD
-```
+async def ask_age(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ввода возраста"""
+    try:
+        age_text = update.message.text.strip()
 
-async def adding_good(update: Update, context: ContextTypes.DEFAULT_TYPE):
-context.user_data[‘entry’][‘good’] = update.message.text
+        if not age_text.isdigit():
+            await update.message.reply_text(Messages.INVALID_AGE)
+            return ASK_AGE
 
-```
-good_text = (
-    "*✅ Записал\\!*\n\n"
-    "*Что ты УЛУЧШИШЬ завтра\\?*\n"
-    "_(Максимум 2 пункта)_\n\n"
-    "`Пример:`\n"
-    "_Буду спать раньше, не буду откладывать ДЗ_"
-)
+        age = int(age_text)
 
-await update.message.reply_text(
-    good_text,
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-return ADDING_BETTER
-```
+        if age < 1 or age > 150:
+            await update.message.reply_text("Введите реалистичный возраст (1-150).")
+            return ASK_AGE
 
-async def adding_better(update: Update, context: ContextTypes.DEFAULT_TYPE):
-context.user_data[‘entry’][‘better’] = update.message.text
+        context.user_data["age"] = age
+        await update.message.reply_text(Messages.ASK_GOAL)
+        return ASK_GOAL
 
-```
-better_text = (
-    "*💡 Понял\\!*\n\n"
-    "*Сколько МИНУТ ты был в TikTok сегодня\\?*\n"
-    "_(Напиши число, например: 120)_"
-)
+    except Exception as e:
+        logger.error(f"Ошибка в ask_age: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
 
-await update.message.reply_text(
-    better_text,
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-return ADDING_TIKTOK
-```
 
-async def adding_tiktok(update: Update, context: ContextTypes.DEFAULT_TYPE):
-try:
-tiktok_mins = int(update.message.text)
-context.user_data[‘entry’][‘tiktok’] = tiktok_mins
+async def ask_goal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ввода цели"""
+    try:
+        user_id = str(update.effective_user.id)
+        goal = update.message.text.strip()
 
-```
-    if tiktok_mins > 180:
-        emoji = "🔴"
-        analysis = f"_Это {tiktok_mins // 60} часов {tiktok_mins % 60} минут\\. ОЧЕНЬ много\\._"
-    elif tiktok_mins > 60:
-        emoji = "🟡"
-        analysis = f"_{tiktok_mins} минут\\. Нужно меньше\\._"
-    else:
-        emoji = "🟢"
-        analysis = f"_{tiktok_mins} минут\\. Отлично\\!_"
-    
-    tiktok_text = (
-        f"*{emoji} {analysis}*\n\n"
-        "*Сколько СТРАНИЦ ты прочитал сегодня\\?*\n"
-        "_(Напиши число или 0, если не читал)_"
-    )
-    
-    await update.message.reply_text(
-        tiktok_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    return ADDING_READ
-except ValueError:
-    error_text = "*❌ Напиши число\\!* `Например: 120`"
-    await update.message.reply_text(
-        error_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    return ADDING_TIKTOK
-```
+        if not goal or len(goal) < 3:
+            await update.message.reply_text("Введите корректную цель (минимум 3 символа).")
+            return ASK_GOAL
 
-async def adding_read(update: Update, context: ContextTypes.DEFAULT_TYPE):
-try:
-pages = int(update.message.text)
-context.user_data[‘entry’][‘read’] = pages
+        # Сохраняем данные пользователя
+        user_data = {
+            "name": context.user_data["name"],
+            "age": context.user_data["age"],
+            "goal": goal,
+        }
 
-```
-    if pages > 30:
-        emoji = "🟢"
-        analysis = f"_{pages} страниц\\! Супер\\!_"
-    elif pages > 10:
-        emoji = "🟡"
-        analysis = f"_{pages} страниц\\. Хорошо\\._"
-    elif pages > 0:
-        emoji = "🟢"
-        analysis = f"_{pages} страниц\\. Продолжай\\!_"
-    else:
-        emoji = "🔴"
-        analysis = "_0 страниц\\. Нужно читать больше\\._"
-    
-    read_text = (
-        f"*{emoji} {analysis}*\n\n"
-        "*Сколько ЧАСОВ ты спал сегодня\\?*\n"
-        "_(Напиши число, например: 8)_"
-    )
-    
-    await update.message.reply_text(
-        read_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    return ADDING_SLEEP
-except ValueError:
-    error_text = "*❌ Напиши число\\!* `Например: 20`"
-    await update.message.reply_text(
-        error_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    return ADDING_READ
-```
+        if not UserStorage.save_user(user_id, user_data):
+            await update.message.reply_text(Messages.ERROR)
+            return ConversationHandler.END
 
-async def adding_sleep(update: Update, context: ContextTypes.DEFAULT_TYPE):
-try:
-sleep_hours = float(update.message.text)
-context.user_data[‘entry’][‘sleep’] = sleep_hours
+        # Удаляем сообщение регистрации
+        if "register_message_id" in context.user_data:
+            try:
+                await context.bot.delete_message(
+                    chat_id=update.effective_chat.id,
+                    message_id=context.user_data["register_message_id"],
+                )
+            except TelegramError as e:
+                logger.warning(f"Не удалось удалить сообщение регистрации: {e}")
 
-```
-    if sleep_hours >= 7.5:
-        emoji = "🟢"
-        analysis = f"_{sleep_hours} часов\\. Отлично спал\\!_"
-    elif sleep_hours >= 6:
-        emoji = "🟡"
-        analysis = f"_{sleep_hours} часов\\. Маловато\\._"
-    else:
-        emoji = "🔴"
-        analysis = f"_{sleep_hours} часов\\. Очень мало для развития мозга\\!_"
-    
-    diary = load_diary()
-    date = datetime.now().strftime("%Y-%m-%d")
-    diary[date] = context.user_data['entry']
-    save_diary(diary)
-    
-    entry = context.user_data['entry']
-    
-    good_escaped = escape_markdown(entry['good'][:100])
-    better_escaped = escape_markdown(entry['better'][:100])
-    
-    summary = (
-        f"*{emoji} {analysis}*\n\n"
-        f"*✅ Запись сохранена\\!*\n\n"
-        f"*📋 ИТОГО на {date}:*\n"
-        f"*✅ Хорошее:*\n_{good_escaped}_\n\n"
-        f"*⚠️ Улучшить:*\n_{better_escaped}_\n\n"
-        f"*📊 TikTok:* `{entry['tiktok']} мин`\n"
-        f"*📚 Прочитал:* `{entry['read']} стр`\n"
-        f"*💤 Спал:* `{entry['sleep']} ч`"
-    )
-    
-    await update.message.reply_sticker(STICKER_ID)
-    
-    await update.message.reply_text(
-        summary,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    await main_menu(update, context)
-    
-except ValueError:
-    error_text = "*❌ Напиши число\\!* `Например: 8`"
-    await update.message.reply_text(
-        error_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    return ADDING_SLEEP
-```
+        # Экран подключения
+        connect_msg = await update.message.reply_photo(
+            photo=IMG_CONNECT,
+            caption=Messages.CONNECTING
+        )
 
-async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-await update.message.reply_sticker(STICKER_ID)
+        await asyncio.sleep(3)  # Сократил время ожидания
 
-```
-diary = load_diary()
+        # Удаляем сообщение подключения
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=connect_msg.message_id,
+            )
+        except TelegramError as e:
+            logger.warning(f"Не удалось удалить сообщение подключения: {e}")
 
-if not diary:
-    stats_empty = (
-        "*📊 Дневник пуст*\n\n"
-        "_Добавь первую запись\\!_"
-    )
-    await update.message.reply_text(
-        stats_empty,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    await main_menu(update, context)
-    return CHOOSING_ACTION
+        return await show_main_menu(update, context)
 
-tiktok_total = sum(entry.get('tiktok', 0) for entry in diary.values())
-read_total = sum(entry.get('read', 0) for entry in diary.values())
-sleep_total = sum(entry.get('sleep', 0) for entry in diary.values())
-sleep_avg = sleep_total / len(diary) if diary else 0
-entries_count = len(diary)
+    except Exception as e:
+        logger.error(f"Ошибка в ask_goal: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
 
-tiktok_avg = tiktok_total // entries_count if entries_count > 0 else 0
 
-stats_text = (
-    "*📊 СТАТИСТИКА*\n\n"
-    f"*Дней записей:* `{entries_count}`\n"
-    f"*📱 TikTok всего:* `{tiktok_total} мин` `({tiktok_avg} мин/день)`\n"
-    f"*📚 Прочитано:* `{read_total} страниц`\n"
-    f"*💤 Спал всего:* `{sleep_total:.1f} часов` `({sleep_avg:.1f} ч/день)`\n\n"
-)
+# ================== MAIN MENU ==================
 
-if tiktok_avg <= 60:
-    stats_text += "> 🟢 *TikTok под контролем\\!*\n"
-elif tiktok_avg <= 120:
-    stats_text += "> 🟡 *TikTok можно меньше*\n"
-else:
-    stats_text += "> 🔴 *TikTok слишком много\\!*\n"
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать главное меню"""
+    try:
+        await update.message.reply_photo(
+            photo=IMG_MAIN_MENU,
+            caption=Messages.MAIN_MENU_CAPTION,
+            reply_markup=ReplyKeyboardMarkup(MAIN_KEYBOARD, resize_keyboard=True),
+        )
+        return MAIN_MENU
 
-if read_total > entries_count * 10:
-    stats_text += "> 🟢 *Хорошо читаешь\\!*\n"
+    except TelegramError as e:
+        logger.error(f"Ошибка при показе меню: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка в show_main_menu: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return ConversationHandler.END
 
-if sleep_avg >= 7.5:
-    stats_text += "> 🟢 *Сон в норме\\!*"
-else:
-    stats_text += "> 🟡 *Нужно спать больше*"
 
-await update.message.reply_text(
-    stats_text,
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-await main_menu(update, context)
-return CHOOSING_ACTION
-```
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик меню"""
+    try:
+        text = update.message.text.strip()
 
-async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-await update.message.reply_sticker(STICKER_ID)
+        menu_handlers = {
+            "📝 Новая запись": Messages.NEW_RECORD,
+            "📊 Статистика": Messages.STATISTICS,
+            "📖 История": Messages.HISTORY,
+        }
 
-```
-diary = load_diary()
+        if text in menu_handlers:
+            await update.message.reply_text(menu_handlers[text])
+            return MAIN_MENU
 
-if not diary:
-    history_empty = (
-        "*📖 История пуста*\n\n"
-        "_Добавь первую запись\\!_"
-    )
-    await update.message.reply_text(
-        history_empty,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    await main_menu(update, context)
-    return CHOOSING_ACTION
+        elif text == "❌ Выход":
+            await update.message.reply_text(
+                Messages.LOGOUT,
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return ConversationHandler.END
 
-sorted_dates = sorted(diary.keys(), reverse=True)[:7]
+        else:
+            await update.message.reply_text(Messages.INVALID_MENU)
+            return MAIN_MENU
 
-history_text = "*📖 ПОСЛЕДНИЕ ЗАПИСИ*\n\n"
+    except TelegramError as e:
+        logger.error(f"Ошибка Telegram в handle_menu: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return MAIN_MENU
+    except Exception as e:
+        logger.error(f"Ошибка в handle_menu: {e}")
+        await update.message.reply_text(Messages.ERROR)
+        return MAIN_MENU
 
-for i, date in enumerate(sorted_dates, 1):
-    entry = diary[date]
-    good_short = escape_markdown(entry.get('good', '-')[:50])
-    
-    history_text += (
-        f"*{i}\\. 📅 {date}*\n"
-        f"✅ _{good_short}_\n"
-        f"📊 TikTok: `{entry.get('tiktok', 0)} мин` | "
-        f"📚 Читал: `{entry.get('read', 0)} стр` | "
-        f"💤 Спал: `{entry.get('sleep', 0)} ч`\n\n"
-    )
 
-await update.message.reply_text(
-    history_text,
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-await main_menu(update, context)
-return CHOOSING_ACTION
-```
-
-async def exit_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-exit_text = (
-“*👋 До встречи\!*\n\n”
-“*Продолжай развиваться\!*\n\n”
-“Напиши `/start`, чтобы начать снова\.”
-)
-
-```
-await update.message.reply_text(
-    exit_text,
-    reply_markup=ReplyKeyboardRemove(),
-    parse_mode=ParseMode.MARKDOWN_V2
-)
-return ConversationHandler.END
-```
-
-async def handle_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-text = update.message.text
-
-```
-if text == "📝 Добавить запись":
-    return await add_entry(update, context)
-elif text == "📊 Статистика":
-    return await show_stats(update, context)
-elif text == "📖 История":
-    return await show_history(update, context)
-elif text == "❌ Выход":
-    return await exit_bot(update, context)
-else:
-    unknown_text = (
-        "*❌ Неизвестная команда*\n\n"
-        "_Выбери из меню\\._"
-    )
-    await update.message.reply_text(
-        unknown_text,
-        parse_mode=ParseMode.MARKDOWN_V2
-    )
-    return CHOOSING_ACTION
-```
+# ================== MAIN ==================
 
 def main():
-TOKEN = os.getenv(“TOKEN”)
+    """Запуск бота"""
+    try:
+        if TOKEN == "PASTE_YOUR_TOKEN_HERE":
+            raise ValueError("Установите корректный токен в TOKEN или переменной TELEGRAM_TOKEN")
 
-```
-if not TOKEN:
-    print("ERROR: TOKEN not set in environment variables")
-    return
+        app = Application.builder().token(TOKEN).build()
 
-app = Application.builder().token(TOKEN).build()
+        conv = ConversationHandler(
+            entry_points=[CommandHandler("start", start)],
+            states={
+                ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
+                ASK_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_age)],
+                ASK_GOAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_goal)],
+                MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu)],
+            },
+            fallbacks=[CommandHandler("start", start)],
+        )
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        CHOOSING_ACTION: [MessageHandler(filters.TEXT, handle_choice)],
-        ADDING_GOOD: [MessageHandler(filters.TEXT, adding_good)],
-        ADDING_BETTER: [MessageHandler(filters.TEXT, adding_better)],
-        ADDING_TIKTOK: [MessageHandler(filters.TEXT, adding_tiktok)],
-        ADDING_READ: [MessageHandler(filters.TEXT, adding_read)],
-        ADDING_SLEEP: [MessageHandler(filters.TEXT, adding_sleep)],
-    },
-    fallbacks=[CommandHandler("start", start)],
-)
+        app.add_handler(conv)
 
-app.add_handler(conv_handler)
+        logger.info("🤖 Бот запущен и готов к работе")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-print("Bot is running...")
-app.run_polling()
-```
+    except ValueError as e:
+        logger.error(f"Ошибка конфигурации: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
+        raise
 
-if **name** == “**main**”:
-main()
+
+if __name__ == "__main__":
+    main()
