@@ -1,5 +1,6 @@
-# handlers.py (ПОЛНЫЙ, включая онлайн)
-import asyncio, random
+# handlers.py (полная версия с фото в меню и битвах)
+import asyncio
+import random
 from aiogram import F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -8,7 +9,11 @@ import config
 from config import Game, SettingsState, TrainingState, SUITS, RANKS, VALUES, RANK_DISPLAY, MEDALS, WIN_REACTIONS
 from keyboards import *
 from rating import update_player_stats, get_top, get_user_stats, ACHIEVEMENTS
-from __main__ import bot, dp
+from main import bot, dp
+
+# Прямые ссылки на изображения
+IMG_MENU = "https://i.ibb.co/N66b2ZVr/IMG-2599.png"
+IMG_BATTLE = "https://i.ibb.co/mr2LFp0R/IMG-2601.png"
 
 # ============== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==============
 def make_scoreboard(players: list) -> str:
@@ -55,12 +60,13 @@ def is_online_player(chat_id: int) -> bool:
 @dp.message(Command("start", "help"))
 async def cmd_start(msg: Message, state: FSMContext):
     await state.clear()
-    await msg.answer(
-        "💪 *КАРТОЧНЫЙ ДОМИК*\n\n"
-        "🎴 Игра в отжимания по картам!\n"
-        "Тяни карту — получай задание.\n"
-        "Масть = *вид*, номинал = *количество*.\n\n"
-        "Выживет сильнейший! 🔥",
+    await msg.answer_photo(
+        photo=IMG_MENU,
+        caption="💪 *КАРТОЧНЫЙ ДОМИК*\n\n"
+                "🎴 Игра в отжимания по картам!\n"
+                "Тяни карту — получай задание.\n"
+                "Масть = *вид*, номинал = *количество*.\n\n"
+                "Выживет сильнейший! 🔥",
         parse_mode="Markdown",
         reply_markup=kb_main(),
     )
@@ -90,13 +96,19 @@ async def set_timeout(msg: Message, state: FSMContext):
     except:
         await msg.answer("❌ Введи целое число от 5 до 300.")
 
+# При возврате в меню удаляем старое сообщение и шлём новое фото
 @dp.callback_query(F.data == "menu")
 async def go_menu(cb: CallbackQuery, state: FSMContext):
     await state.clear()
-    await cb.message.edit_text(
-        "💪 *КАРТОЧНЫЙ ДОМИК*\n\n"
-        "🎴 Игра в отжимания по картам!\n"
-        "Выживет сильнейший! 🔥",
+    try:
+        await cb.message.delete()
+    except:
+        pass
+    await cb.message.answer_photo(
+        photo=IMG_MENU,
+        caption="💪 *КАРТОЧНЫЙ ДОМИК*\n\n"
+                "🎴 Игра в отжимания по картам!\n"
+                "Выживет сильнейший! 🔥",
         parse_mode="Markdown",
         reply_markup=kb_main(),
     )
@@ -104,19 +116,24 @@ async def go_menu(cb: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "rules")
 async def show_rules(cb: CallbackQuery):
-    await cb.message.edit_text(
-        "📖 *ПРАВИЛА КАРТОЧНОГО ДОМИКА*\n\n"
-        "🃏 *Масть = Вид отжиманий:*\n"
-        "♥️ 💪 Классические\n"
-        "♠️ 🦅 Широкий хват\n"
-        "♦️ 💎 Алмазные (руки ромбом)\n"
-        "♣️ 💥 Взрывные (с хлопком)\n\n"
-        "🔢 *Номинал = Количество:*\n"
-        "2–10 → столько же раз\n"
-        "Валет / Дама / Король → 12 раз\n"
-        "⚡ Туз → 15 раз\n\n"
-        "💡 Кто сдался — тот проиграл!\n"
-        "🏆 Последний стоящий — чемпион!",
+    try:
+        await cb.message.delete()
+    except:
+        pass
+    await cb.message.answer_photo(
+        photo=IMG_MENU,
+        caption="📖 *ПРАВИЛА КАРТОЧНОГО ДОМИКА*\n\n"
+                "🃏 *Масть = Вид отжиманий:*\n"
+                "♥️ 💪 Классические\n"
+                "♠️ 🦅 Широкий хват\n"
+                "♦️ 💎 Алмазные (руки ромбом)\n"
+                "♣️ 💥 Взрывные (с хлопком)\n\n"
+                "🔢 *Номинал = Количество:*\n"
+                "2–10 → столько же раз\n"
+                "Валет / Дама / Король → 12 раз\n"
+                "⚡ Туз → 15 раз\n\n"
+                "💡 Кто сдался — тот проиграл!\n"
+                "🏆 Последний стоящий — чемпион!",
         parse_mode="Markdown",
         reply_markup=kb_back(),
     )
@@ -132,14 +149,31 @@ async def show_rating(cb: CallbackQuery):
         text = "\n".join(lines)
     else:
         text = "Рейтинг пока пуст."
-    await cb.message.edit_text(text, parse_mode="Markdown", reply_markup=kb_rating())
+    try:
+        await cb.message.delete()
+    except:
+        pass
+    await cb.message.answer_photo(
+        photo=IMG_MENU,
+        caption=text,
+        parse_mode="Markdown",
+        reply_markup=kb_rating(),
+    )
     await cb.answer()
 
 @dp.callback_query(F.data == "my_stats")
 async def show_my_stats(cb: CallbackQuery):
     stats = get_user_stats(cb.from_user.id)
     if not stats:
-        await cb.message.edit_text("Ты пока не сыграл ни одной игры.", reply_markup=kb_back())
+        try:
+            await cb.message.delete()
+        except:
+            pass
+        await cb.message.answer_photo(
+            photo=IMG_MENU,
+            caption="Ты пока не сыграл ни одной игры.",
+            reply_markup=kb_back()
+        )
         return
     ach_list = "\n".join(ACHIEVEMENTS[a]["name"] for a in stats.get("achievements", [])) or "нет"
     text = (
@@ -153,14 +187,28 @@ async def show_my_stats(cb: CallbackQuery):
         f"🏋️ Тренировок: {stats['trainings']}\n"
         f"🎖 Достижения:\n{ach_list}"
     )
-    await cb.message.edit_text(text, parse_mode="Markdown", reply_markup=kb_back())
+    try:
+        await cb.message.delete()
+    except:
+        pass
+    await cb.message.answer_photo(
+        photo=IMG_MENU,
+        caption=text,
+        parse_mode="Markdown",
+        reply_markup=kb_back()
+    )
     await cb.answer()
 
 # ============== ЛОКАЛЬНАЯ ИГРА ==============
 @dp.callback_query(F.data == "battle")
 async def start_battle(cb: CallbackQuery, state: FSMContext):
     await state.clear()
-    await cb.message.edit_text(
+    # Удалим предыдущее (меню) и отправим текстовый выбор количества игроков
+    try:
+        await cb.message.delete()
+    except:
+        pass
+    await cb.message.answer(
         "⚔️ *НОВАЯ БИТВА!*\n\n"
         "👥 Сколько игроков будет сражаться?\n"
         "*(от 2 до 6)*",
@@ -194,50 +242,77 @@ async def collect_names(msg: Message, state: FSMContext):
     else:
         await state.set_state(Game.playing)
         names_line = " ⚔️ ".join(f"*{p['name']}*" for p in players)
-        await msg.answer(
-            f"🔥 *БИТВА НАЧИНАЕТСЯ!*\n\n{names_line}\n\n"
-            f"🎴 Карты перемешаны...\nПусть победит сильнейший! 💪",
+        # Отправим первое фото битвы и сохраним его message_id
+        msg_photo = await msg.answer_photo(
+            photo=IMG_BATTLE,
+            caption=f"🔥 *БИТВА НАЧИНАЕТСЯ!*\n\n{names_line}\n\n"
+                    f"🎴 Карты перемешаны...\n"
+                    f"Пусть победит сильнейший! 💪",
             parse_mode="Markdown",
+            reply_markup=kb_draw(),
         )
+        await state.update_data(photo_msg_id=msg_photo.message_id)
         await asyncio.sleep(1)
-        await push_turn(msg.chat.id, players, 0, 1)
+        # Передаём управление первому ходу (обновим это же сообщение)
+        await push_turn(msg.chat.id, players, 0, 1, msg_photo.message_id)
 
-async def push_turn(chat_id: int, players: list, idx: int, rnd: int):
-    p = players[idx]
+async def push_turn(chat_id: int, players: list, idx: int, rnd: int, photo_msg_id: int):
+    """Отправляет (редактирует) сообщение с ходом текущего игрока."""
+    p     = players[idx]
     alive = active_count(players)
-    await bot.send_message(
-        chat_id,
-        f"🎮 *Раунд {rnd}*  |  Игроков: {alive}\n{'─'*24}\n"
-        f"🎯 Ход: *{p['name']}*\n\nГотов? Тяни карту! 👇",
-        parse_mode="Markdown", reply_markup=kb_draw(),
+    caption = (
+        f"🎮 *Раунд {rnd}*  |  Игроков: {alive}\n"
+        f"{'─' * 24}\n"
+        f"🎯 Ход: *{p['name']}*\n\n"
+        f"Готов? Тяни карту! 👇"
+    )
+    await bot.edit_message_caption(
+        chat_id=chat_id,
+        message_id=photo_msg_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_draw(),
     )
 
 @dp.callback_query(F.data == "draw")
 async def draw_card(cb: CallbackQuery, state: FSMContext):
-    # Онлайн-игроки обрабатываются отдельно
+    # Онлайн обрабатываем отдельно
     if is_online_player(cb.from_user.id):
         await online_draw(cb)
         return
-    # Локальная игра
-    data = await state.get_data()
+
+    data    = await state.get_data()
     players = data["players"]
-    idx = data["cur"]
-    suit = random.choice(SUITS)
-    rank = random.choice(RANKS)
+    idx     = data["cur"]
+    photo_id = data.get("photo_msg_id")
+
+    suit  = random.choice(SUITS)
+    rank  = random.choice(RANKS)
     count = VALUES[rank]
+
     players[idx]["total"] += count
-    players[idx]["rds"] += 1
+    players[idx]["rds"]   += 1
     await state.update_data(players=players, last={"suit": suit, "rank": rank, "count": count})
+
     special = ""
     if rank == "A":
         special = "\n\n⚡ *ТУЗА ВЫТЯНУЛ!* Это сразу 15 раз — держись! 😤"
     elif rank in ("J", "Q", "K"):
         special = "\n\n👑 *Фигурная карта* — 12 раз, не меньше!"
-    await cb.message.edit_text(
+
+    caption = (
         f"🃏 *{players[idx]['name']} тянет карту...*\n\n"
-        f"`{card_art(suit, rank, count)}`\n{special}\n\n"
-        f"_{suit['tip']}_\n\nДавай, *{players[idx]['name']}*! 💪",
-        parse_mode="Markdown", reply_markup=kb_done(),
+        f"`{card_art(suit, rank, count)}`\n"
+        f"{special}\n\n"
+        f"_{suit['tip']}_\n\n"
+        f"Давай, *{players[idx]['name']}*! 💪"
+    )
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_done(),
     )
     await cb.answer("🃏 Карта вытянута!")
 
@@ -246,29 +321,42 @@ async def mark_done(cb: CallbackQuery, state: FSMContext):
     if is_online_player(cb.from_user.id):
         await online_done(cb)
         return
-    data = await state.get_data()
+
+    data    = await state.get_data()
     players = data["players"]
-    idx = data["cur"]
-    rnd = data["rnd"]
-    last = data.get("last", {})
-    count = last.get("count", 0)
-    name = players[idx]["name"]
-    await cb.message.edit_text(
+    idx     = data["cur"]
+    rnd     = data["rnd"]
+    last    = data.get("last", {})
+    count   = last.get("count", 0)
+    name    = players[idx]["name"]
+    photo_id = data.get("photo_msg_id")
+
+    caption = (
         f"✅ *{name}* выполнил *{count}* отж.! Красавчик! 💪\n"
-        f"📊 Всего у *{name}*: *{players[idx]['total']}*",
+        f"📊 Всего у *{name}*: *{players[idx]['total']}*"
+    )
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
         parse_mode="Markdown",
     )
     await cb.answer("✅ Засчитано!")
+
     nxt, new_rnd = next_player(players, idx, rnd)
     await state.update_data(cur=nxt, rnd=new_rnd)
+
     await asyncio.sleep(1.5)
     if new_rnd > rnd:
+        # Сообщение о завершении раунда отдельным текстом
         await cb.message.answer(
-            f"🏁 *Раунд {rnd} завершён!*\n\n{make_scoreboard(players)}\n\n🔥 *Раунд {new_rnd} — начали!*",
+            f"🏁 *Раунд {rnd} завершён!*\n\n{make_scoreboard(players)}\n\n"
+            f"🔥 *Раунд {new_rnd} — начали!*",
             parse_mode="Markdown",
         )
         await asyncio.sleep(1)
-    await push_turn(cb.message.chat.id, players, nxt, new_rnd)
+
+    await push_turn(cb.message.chat.id, players, nxt, new_rnd, photo_id)
 
 @dp.callback_query(F.data == "score")
 async def show_score(cb: CallbackQuery, state: FSMContext):
@@ -291,10 +379,13 @@ async def player_quit(cb: CallbackQuery, state: FSMContext):
     players = data["players"]
     idx = data["cur"]
     rnd = data["rnd"]
+    photo_id = data.get("photo_msg_id")
     name = players[idx]["name"]
     players[idx]["out"] = True
     await state.update_data(players=players)
+
     alive = [p for p in players if not p["out"]]
+
     if len(alive) == 1:
         w = alive[0]
         for p in players:
@@ -302,15 +393,24 @@ async def player_quit(cb: CallbackQuery, state: FSMContext):
                 "game_type": "local", "won": not p["out"],
                 "total_pushups": p["total"], "rounds": p["rds"]
             })
-        await cb.message.edit_text(
+        caption = (
             f"🏳 *{name}* не выдержал и сдался!\n\n"
-            f"🏆 *{w['name'].upper()} — ПОБЕДИТЕЛЬ!* 🏆\n\n{make_scoreboard(players)}",
-            parse_mode="Markdown", reply_markup=kb_rematch(),
+            f"🏆 *{w['name'].upper()} — ПОБЕДИТЕЛЬ!* 🏆\n\n{make_scoreboard(players)}"
+        )
+        await bot.edit_message_caption(
+            chat_id=cb.message.chat.id,
+            message_id=photo_id,
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=kb_rematch(),
         )
         await state.clear()
     elif len(alive) == 0:
-        await cb.message.edit_text(
-            f"🏳 Все сдались! 😅\n\n{make_scoreboard(players)}",
+        caption = f"🏳 Все сдались! 😅\n\n{make_scoreboard(players)}"
+        await bot.edit_message_caption(
+            chat_id=cb.message.chat.id,
+            message_id=photo_id,
+            caption=caption,
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔄 Сыграть снова", callback_data="battle")],
@@ -318,14 +418,17 @@ async def player_quit(cb: CallbackQuery, state: FSMContext):
         )
         await state.clear()
     else:
-        await cb.message.edit_text(
-            f"🏳 *{name}* сдался...\nОсталось в строю: *{len(alive)}* 💪",
+        caption = f"🏳 *{name}* сдался...\nОсталось в строю: *{len(alive)}* 💪"
+        await bot.edit_message_caption(
+            chat_id=cb.message.chat.id,
+            message_id=photo_id,
+            caption=caption,
             parse_mode="Markdown",
         )
         nxt, new_rnd = next_player(players, idx, rnd)
         await state.update_data(cur=nxt, rnd=new_rnd)
         await asyncio.sleep(1.5)
-        await push_turn(cb.message.chat.id, players, nxt, new_rnd)
+        await push_turn(cb.message.chat.id, players, nxt, new_rnd, photo_id)
     await cb.answer()
 
 @dp.callback_query(F.data == "finish")
@@ -334,10 +437,16 @@ async def finish_game(cb: CallbackQuery, state: FSMContext):
         await online_finish(cb)
         return
     data = await state.get_data()
-    await cb.message.edit_text(
-        f"🏁 *ИГРА ЗАВЕРШЕНА!*  *(Раунд {data['rnd']})*\n\n"
-        f"{make_scoreboard(data['players'])}\n\nКто победил?",
-        parse_mode="Markdown", reply_markup=kb_end(data['players']),
+    players = data["players"]
+    rnd = data["rnd"]
+    photo_id = data.get("photo_msg_id")
+    caption = f"🏁 *ИГРА ЗАВЕРШЕНА!*  *(Раунд {rnd})*\n\n{make_scoreboard(players)}\n\nКто победил?"
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_end(players),
     )
     await cb.answer()
 
@@ -347,7 +456,8 @@ async def declare_winner(cb: CallbackQuery, state: FSMContext):
     players = data.get("players", [])
     i = int(cb.data[4:])
     if i >= len(players):
-        await cb.answer("Ошибка!"); return
+        await cb.answer("Ошибка!")
+        return
     w = players[i]
     for p in players:
         update_player_stats(p.get("chat_id", 0), p["name"], {
@@ -355,12 +465,19 @@ async def declare_winner(cb: CallbackQuery, state: FSMContext):
             "total_pushups": p["total"], "rounds": p["rds"]
         })
     react = random.choice(WIN_REACTIONS)
-    await cb.message.edit_text(
+    photo_id = data.get("photo_msg_id")
+    caption = (
         f"🏆 *{w['name'].upper()} — ЧЕМПИОН!* {react}\n\n"
         f"💪 Отжиманий сделано: *{w['total']}*\n"
         f"🔄 Раундов пережито: *{w['rds']}*\n\n{make_scoreboard(players)}\n\n"
-        f"_Тренируйся каждый день!_ 🔥",
-        parse_mode="Markdown", reply_markup=kb_rematch(),
+        f"_Тренируйся каждый день!_ 🔥"
+    )
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_rematch(),
     )
     await state.clear()
     await cb.answer(f"🏆 {w['name']} побеждает!")
@@ -369,10 +486,12 @@ async def declare_winner(cb: CallbackQuery, state: FSMContext):
 async def declare_draw(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     players = data.get("players", [])
-    await cb.message.edit_text(
-        f"🤝 *НИЧЬЯ!*\n\nВсе бойцы показали силу духа!\n\n"
-        f"{make_scoreboard(players)}\n\n"
-        f"*В следующий раз выясним сильнейшего!* 💪",
+    photo_id = data.get("photo_msg_id")
+    caption = f"🤝 *НИЧЬЯ!*\n\nВсе бойцы показали силу духа!\n\n{make_scoreboard(players)}\n\n*В следующий раз выясним сильнейшего!* 💪"
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔄 Сыграть снова!", callback_data="battle")],
@@ -387,11 +506,18 @@ async def start_solo(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(TrainingState.playing)
     await state.update_data(total=0, rounds=0)
-    await cb.message.edit_text(
-        "🏋️ *ТРЕНИРОВКА*\n\nТяни карту и отжимайся без ограничений.\n"
-        "Нажми «Закончить тренировку» когда устанешь.",
-        parse_mode="Markdown", reply_markup=kb_solo_draw(),
+    try:
+        await cb.message.delete()
+    except:
+        pass
+    msg_photo = await cb.message.answer_photo(
+        photo=IMG_BATTLE,
+        caption="🏋️ *ТРЕНИРОВКА*\n\nТяни карту и отжимайся без ограничений.\n"
+                "Нажми «Закончить тренировку» когда устанешь.",
+        parse_mode="Markdown",
+        reply_markup=kb_solo_draw(),
     )
+    await state.update_data(photo_msg_id=msg_photo.message_id)
     await cb.answer()
 
 @dp.callback_query(F.data == "solo_draw", TrainingState.playing)
@@ -399,6 +525,7 @@ async def solo_draw(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     total = data.get("total", 0)
     rounds = data.get("rounds", 0)
+    photo_id = data.get("photo_msg_id")
     suit = random.choice(SUITS)
     rank = random.choice(RANKS)
     count = VALUES[rank]
@@ -410,19 +537,30 @@ async def solo_draw(cb: CallbackQuery, state: FSMContext):
         special = "\n\n⚡ *ТУЗА ВЫТЯНУЛ!* 15 раз!"
     elif rank in ("J", "Q", "K"):
         special = "\n\n👑 *Фигурная карта* — 12 раз!"
-    await cb.message.edit_text(
+    caption = (
         f"🃏 *Тренировочная карта*\n\n`{card_art(suit, rank, count)}`\n{special}\n"
-        f"_{suit['tip']}_\n\nСделай *{count}* отж. (всего: {total})",
-        parse_mode="Markdown", reply_markup=kb_solo_done(),
+        f"_{suit['tip']}_\n\nСделай *{count}* отж. (всего: {total})"
+    )
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_solo_done(),
     )
     await cb.answer("🃏")
 
 @dp.callback_query(F.data == "solo_done", TrainingState.playing)
 async def solo_done(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    await cb.message.edit_text(
-        f"✅ Сделано! Продолжай тянуть карты.\nВсего сегодня: *{data['total']}* отж.",
-        parse_mode="Markdown", reply_markup=kb_solo_draw(),
+    photo_id = data.get("photo_msg_id")
+    caption = f"✅ Сделано! Продолжай тянуть карты.\nВсего сегодня: *{data['total']}* отж."
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_solo_draw(),
     )
     await cb.answer()
 
@@ -431,39 +569,54 @@ async def solo_finish(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     total = data.get("total", 0)
     rounds = data.get("rounds", 0)
+    photo_id = data.get("photo_msg_id")
     new_ach = update_player_stats(cb.from_user.id, cb.from_user.full_name, {
         "game_type": "training", "total_pushups": total, "rounds": rounds
     })
     ach_text = "\n".join(ACHIEVEMENTS[a]["name"] for a in new_ach) if new_ach else ""
-    await cb.message.edit_text(
+    caption = (
         f"🏁 *Тренировка окончена!*\n\n💪 Сделано: *{total}* отж. за {rounds} карт.\n"
-        f"{'🎖 Новые достижения:\n' + ach_text if ach_text else ''}",
-        parse_mode="Markdown", reply_markup=kb_back(),
+        f"{'🎖 Новые достижения:\n' + ach_text if ach_text else ''}"
+    )
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_back(),
     )
     await state.clear()
     await cb.answer("Отличная работа!")
 
 @dp.callback_query(F.data == "solo_quit", TrainingState.playing)
 async def solo_quit(cb: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    photo_id = data.get("photo_msg_id")
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=photo_id,
+        caption="Тренировка прервана.",
+        reply_markup=kb_back(),
+    )
     await state.clear()
-    await cb.message.edit_text("Тренировка прервана.", reply_markup=kb_back())
     await cb.answer()
 
-# ============== ОНЛАЙН-ЛОББИ (ПОЛНОСТЬЮ) ==============
+# ============== ОНЛАЙН-ЛОББИ (БЕЗ ИЗМЕНЕНИЙ, НО С ФОТО) ==============
 async def update_lobby_message():
     if not config.online_lobby or config.online_lobby["started"]:
         return
     names = "\n".join(f"• {p['name']}" for p in config.online_lobby["players"])
-    text = (
+    caption = (
         f"🌐 *ОНЛАЙН-ЛОББИ*\n\nИгроки ({len(config.online_lobby['players'])}):\n{names}\n\n"
         f"Ожидание {config.ONLINE_TIMEOUT} сек...\n"
         f"Отправь ссылку друзьям, чтобы они нажали /start и кнопку «🌐 Онлайн»!"
     )
     try:
-        await bot.edit_message_text(
+        await bot.edit_message_caption(
             chat_id=config.online_lobby["creator"],
             message_id=config.online_lobby["message_id"],
-            text=text, parse_mode="Markdown",
+            caption=caption,
+            parse_mode="Markdown",
             reply_markup=kb_lobby_creator(len(config.online_lobby["players"])),
         )
     except:
@@ -480,7 +633,6 @@ async def timeout_lobby():
 
 @dp.callback_query(F.data == "online")
 async def join_online(cb: CallbackQuery, state: FSMContext):
-    global online_lobby
     user_id = cb.from_user.id
     user_name = cb.from_user.full_name
     if config.online_lobby and config.online_lobby["started"]:
@@ -494,8 +646,14 @@ async def join_online(cb: CallbackQuery, state: FSMContext):
             "players": [{"chat_id": user_id, "name": user_name, "total": 0, "rds": 0, "out": False}],
             "started": False, "message_id": None, "timer_task": None, "cur": 0, "rnd": 1,
         }
-        msg = await bot.send_message(user_id, "🌐 *ОНЛАЙН-ЛОББИ*\n\nОжидание игроков...", parse_mode="Markdown",
-                                     reply_markup=kb_lobby_creator(1))
+        # Создаём лобби с фото
+        msg = await bot.send_photo(
+            user_id,
+            photo=IMG_MENU,
+            caption="🌐 *ОНЛАЙН-ЛОББИ*\n\nОжидание игроков...",
+            parse_mode="Markdown",
+            reply_markup=kb_lobby_creator(1)
+        )
         config.online_lobby["message_id"] = msg.message_id
         config.online_lobby["timer_task"] = asyncio.create_task(asyncio.sleep(config.ONLINE_TIMEOUT))
         asyncio.create_task(timer_wrapper())
@@ -545,7 +703,10 @@ async def cancel_lobby(cb: CallbackQuery):
     await bot.send_message(config.online_lobby["creator"], "❌ Лобби отменено.")
     config.online_lobby = None
     await cb.answer("Лобби отменено.")
-    await cb.message.edit_text("Лобби отменено.")
+    try:
+        await cb.message.delete()
+    except:
+        pass
 
 async def start_online_game():
     if not config.online_lobby: return
@@ -554,20 +715,29 @@ async def start_online_game():
     config.online_lobby["cur"] = 0
     config.online_lobby["rnd"] = 1
     names_line = " ⚔️ ".join(f"*{p['name']}*" for p in players)
+    # Каждому игроку отправляем фото начала битвы
     for p in players:
-        await bot.send_message(p["chat_id"],
-            f"🔥 *ОНЛАЙН-БИТВА НАЧИНАЕТСЯ!*\n\n{names_line}\n\n"
-            f"Первый ход: *{players[0]['name']}*", parse_mode="Markdown")
+        await bot.send_photo(
+            p["chat_id"],
+            photo=IMG_BATTLE,
+            caption=f"🔥 *ОНЛАЙН-БИТВА НАЧИНАЕТСЯ!*\n\n{names_line}\n\n"
+                    f"Первый ход: *{players[0]['name']}*",
+            parse_mode="Markdown"
+        )
     await push_online_turn(0)
 
 async def push_online_turn(idx: int):
     players = config.online_lobby["players"]
     p = players[idx]
     alive = active_count(players)
-    await bot.send_message(p["chat_id"],
-        f"🎮 *Раунд {config.online_lobby['rnd']}*  |  Игроков: {alive}\n{'─'*24}\n"
-        f"🎯 Твой ход, *{p['name']}*!.",
-        parse_mode="Markdown", reply_markup=kb_draw())
+    await bot.send_photo(
+        p["chat_id"],
+        photo=IMG_BATTLE,
+        caption=f"🎮 *Раунд {config.online_lobby['rnd']}*  |  Игроков: {alive}\n{'─'*24}\n"
+                f"🎯 Твой ход, *{p['name']}*!",
+        parse_mode="Markdown",
+        reply_markup=kb_draw()
+    )
     for other in players:
         if other["chat_id"] != p["chat_id"] and not other["out"]:
             await bot.send_message(other["chat_id"], f"⏳ Ход *{p['name']}*...", parse_mode="Markdown")
@@ -588,10 +758,16 @@ async def online_draw(cb: CallbackQuery):
         special = "\n\n⚡ *ТУЗА ВЫТЯНУЛ!* Это сразу 15 раз — держись! 😤"
     elif rank in ("J", "Q", "K"):
         special = "\n\n👑 *Фигурная карта* — 12 раз, не меньше!"
-    await cb.message.edit_text(
+    caption = (
         f"🃏 *Ты вытянул карту!*\n\n`{card_art(suit, rank, count)}`\n{special}\n\n"
-        f"_{suit['tip']}_\n\nСделай *{count}* отжиманий! 💪",
-        parse_mode="Markdown", reply_markup=kb_done(),
+        f"_{suit['tip']}_\n\nСделай *{count}* отжиманий! 💪"
+    )
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=cb.message.message_id,
+        caption=caption,
+        parse_mode="Markdown",
+        reply_markup=kb_done()
     )
     for p in players:
         if p["chat_id"] != cb.from_user.id and not p["out"]:
@@ -608,9 +784,13 @@ async def online_done(cb: CallbackQuery):
     last = config.online_lobby.get("last", {})
     count = last.get("count", 0)
     name = players[cur]["name"]
-    await cb.message.edit_text(
-        f"✅ Ты сделал *{count}* отж.! Всего у тебя *{players[cur]['total']}*.",
-        parse_mode="Markdown")
+    caption = f"✅ Ты сделал *{count}* отж.! Всего у тебя *{players[cur]['total']}*."
+    await bot.edit_message_caption(
+        chat_id=cb.message.chat.id,
+        message_id=cb.message.message_id,
+        caption=caption,
+        parse_mode="Markdown"
+    )
     await cb.answer("Засчитано!")
     rnd = config.online_lobby["rnd"]
     nxt, new_rnd = next_player(players, cur, rnd)
@@ -620,7 +800,8 @@ async def online_done(cb: CallbackQuery):
         for p in players:
             if not p["out"]:
                 await bot.send_message(p["chat_id"],
-                    f"🏁 *Раунд {rnd} завершён!*\n\n{make_scoreboard(players)}", parse_mode="Markdown")
+                    f"🏁 *Раунд {rnd} завершён!*\n\n{make_scoreboard(players)}",
+                    parse_mode="Markdown")
     await push_online_turn(nxt)
 
 async def online_score(cb: CallbackQuery):
@@ -687,7 +868,6 @@ async def online_finish(cb: CallbackQuery):
     config.online_lobby = None
     await cb.answer("Игра завершена!")
 
-# Обработчик нераспознанных сообщений
 @dp.message()
 async def fallback(msg: Message, state: FSMContext):
     current = await state.get_state()
