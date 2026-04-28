@@ -9,7 +9,7 @@ import config
 from config import Game, SettingsState, TrainingState, SUITS, RANKS, VALUES, RANK_DISPLAY, MEDALS, WIN_REACTIONS
 from keyboards import *
 from rating import update_player_stats, get_top, get_user_stats, ACHIEVEMENTS
-from main import bot, dp
+from dispatcher import bot, dp
 
 # Прямые ссылки на изображения
 IMG_MENU = "https://i.ibb.co/N66b2ZVr/IMG-2599.png"
