@@ -1,0 +1,79 @@
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+def kb_main() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚔️  Сразиться!", callback_data="battle")],
+        [InlineKeyboardButton(text="🏋️  Тренировка", callback_data="solo")],
+        [InlineKeyboardButton(text="🌐  Онлайн",     callback_data="online")],
+        [InlineKeyboardButton(text="📖  Правила",    callback_data="rules"),
+         InlineKeyboardButton(text="🏆  Рейтинг",   callback_data="rating")],
+    ])
+
+def kb_player_count() -> InlineKeyboardMarkup:
+    row = [InlineKeyboardButton(text=str(i), callback_data=f"n_{i}") for i in range(2, 7)]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        row,
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="menu")],
+    ])
+
+def kb_draw() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🃏  Тянуть карту!", callback_data="draw")],
+        [InlineKeyboardButton(text="📊  Счёт",          callback_data="score"),
+         InlineKeyboardButton(text="🏁  Завершить",     callback_data="finish")],
+        [InlineKeyboardButton(text="🏳  Сдаться",       callback_data="quit")],
+    ])
+
+def kb_done() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅  Сделано!", callback_data="done")],
+        [InlineKeyboardButton(text="🏳  Сдаться",  callback_data="quit")],
+    ])
+
+def kb_end(players: list) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=f"🏆  {p['name']} победил!", callback_data=f"win_{i}")]
+        for i, p in enumerate(players) if not p["out"]
+    ]
+    rows.append([InlineKeyboardButton(text="🤝  Ничья!", callback_data="draw_result")])
+    rows.append([InlineKeyboardButton(text="🔄  Сыграть снова", callback_data="battle")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def kb_back() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️  Назад", callback_data="menu")],
+    ])
+
+def kb_rematch() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄  Реванш!", callback_data="battle")],
+        [InlineKeyboardButton(text="🏠  Меню",    callback_data="menu")],
+    ])
+
+def kb_lobby_creator(players_count: int) -> InlineKeyboardMarkup:
+    buttons = []
+    if players_count >= 2:
+        buttons.append([InlineKeyboardButton(text="🚀 Начать сейчас!", callback_data="start_online")])
+    buttons.append([InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_lobby")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# Тренировочные клавиатуры
+def kb_solo_draw() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🃏  Тянуть карту!", callback_data="solo_draw")],
+        [InlineKeyboardButton(text="🏁  Закончить тренировку", callback_data="solo_finish")],
+        [InlineKeyboardButton(text="🏳  Сдаться", callback_data="solo_quit")],
+    ])
+
+def kb_solo_done() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅  Сделано!", callback_data="solo_done")],
+        [InlineKeyboardButton(text="🏳  Сдаться",  callback_data="solo_quit")],
+    ])
+
+# Клавиатура для рейтинга
+def kb_rating() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Моя статистика", callback_data="my_stats")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")],
+    ])
