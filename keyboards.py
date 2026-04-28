@@ -4,7 +4,7 @@ def kb_main() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚔️  Сразиться!", callback_data="battle")],
         [InlineKeyboardButton(text="🏋️  Тренировка", callback_data="solo")],
-        [InlineKeyboardButton(text="🌐  Онлайн",     callback_data="online")],
+        [InlineKeyboardButton(text="🌐  Онлайн",     callback_data="online",style="success")],
         [InlineKeyboardButton(text="📖  Правила",    callback_data="rules"),
          InlineKeyboardButton(text="🏆  Рейтинг",   callback_data="rating")],
     ])
@@ -21,7 +21,7 @@ def kb_draw() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🃏  Тянуть карту!", callback_data="draw")],
         [InlineKeyboardButton(text="📊  Счёт",          callback_data="score"),
          InlineKeyboardButton(text="🏁  Завершить",     callback_data="finish")],
-        [InlineKeyboardButton(text="🏳  Сдаться",       callback_data="quit")],
+        [InlineKeyboardButton(text="🏳  Сдаться",       callback_data="quit",style="danger")],
     ])
 
 def kb_done() -> InlineKeyboardMarkup:
