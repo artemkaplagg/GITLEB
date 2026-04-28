@@ -8,7 +8,7 @@ import config
 from config import Game, SettingsState, TrainingState, SUITS, RANKS, VALUES, RANK_DISPLAY, MEDALS, WIN_REACTIONS
 from keyboards import *
 from rating import update_player_stats, get_top, get_user_stats, ACHIEVEMENTS
-from main import bot, dp
+from __main__ import bot, dp
 
 # ============== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==============
 def make_scoreboard(players: list) -> str:
