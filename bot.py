@@ -1,17 +1,4 @@
-╔══════════════════════════════════════════════╗
-║         🃏  КАРТОЧНЫЙ ДОМИК  🃏              ║
-║       Telegram бот — Отжимания по картам      ║
-║          Aiogram 3.x  |  MONARCH BOT          ║
-╚══════════════════════════════════════════════╝
 
-Установка:
-pip install aiogram
-
-Запуск:
-python monarch_pushup_bot.py
-
-Замени BOT_TOKEN на токен от @BotFather.
-"""
 
 import asyncio
 import random
