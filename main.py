@@ -8,14 +8,14 @@ from rating import load_rating
 load_rating()
 
 bot = Bot(token=config.BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())  # Это главный dp
+dp = Dispatcher(storage=MemoryStorage())
 
-# Импортируем handlers ПОСЛЕ создания dp
+# Импортируем handlers ПОСЛЕ создания dp и bot
 import handlers
 
 async def main():
     print("🃏 КАРТОЧНЫЙ ДОМИК запущен!")
-    # Удаляем вебхук на всякий случай и запускаем поллинг
+    # Удаляем вебхук, чтобы поллинг заработал
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
