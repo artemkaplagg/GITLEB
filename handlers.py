@@ -331,6 +331,7 @@ async def mark_done(cb: CallbackQuery, state: FSMContext):
     name    = players[idx]["name"]
     photo_id = data.get("photo_msg_id")
 
+    # Показываем, что игрок выполнил отжимания
     caption = (
         f"✅ *{name}* выполнил *{count}* отж.! Красавчик! 💪\n"
         f"📊 Всего у *{name}*: *{players[idx]['total']}*"
@@ -346,17 +347,37 @@ async def mark_done(cb: CallbackQuery, state: FSMContext):
     nxt, new_rnd = next_player(players, idx, rnd)
     await state.update_data(cur=nxt, rnd=new_rnd)
 
-    await asyncio.sleep(1.5)
-    if new_rnd > rnd:
-        # Сообщение о завершении раунда отдельным текстом
-        await cb.message.answer(
-            f"🏁 *Раунд {rnd} завершён!*\n\n{make_scoreboard(players)}\n\n"
-            f"🔥 *Раунд {new_rnd} — начали!*",
-            parse_mode="Markdown",
-        )
-        await asyncio.sleep(1)
+    await asyncio.sleep(1)
 
-    await push_turn(cb.message.chat.id, players, nxt, new_rnd, photo_id)
+    if new_rnd > rnd:
+        # Новый раунд: отправляем итоги отдельным сообщением с картинкой
+        await cb.message.answer_photo(
+            photo=IMG_BATTLE,
+            caption=f"🏁 *Раунд {rnd} завершён!*\n\n{make_scoreboard(players)}\n\n🔥 *Раунд {new_rnd} — начали!*",
+            parse_mode="Markdown"
+        )
+        await asyncio.sleep(2)
+
+        # Создаём новое сообщение для хода следующего игрока
+        p = players[nxt]
+        alive = active_count(players)
+        caption_turn = (
+            f"🎮 *Раунд {new_rnd}*  |  Игроков: {alive}\n"
+            f"{'─' * 24}\n"
+            f"🎯 Ход: *{p['name']}*\n\n"
+            f"Готов? Тяни карту! 👇"
+        )
+        turn_msg = await cb.message.answer_photo(
+            photo=IMG_BATTLE,
+            caption=caption_turn,
+            parse_mode="Markdown",
+            reply_markup=kb_draw()
+        )
+        # Запоминаем id этого сообщения для дальнейших обновлений
+        await state.update_data(photo_msg_id=turn_msg.message_id)
+    else:
+        # Раунд продолжается — просто обновляем текущее сообщение
+        await push_turn(cb.message.chat.id, players, nxt, new_rnd, photo_id)
 
 @dp.callback_query(F.data == "score")
 async def show_score(cb: CallbackQuery, state: FSMContext):
