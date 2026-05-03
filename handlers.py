@@ -891,14 +891,9 @@ async def online_finish(cb: CallbackQuery):
     config.online_lobby = None
     await cb.answer("Игра завершена!")
 
-@dp.message()
-async def fallback(msg: Message, state: FSMContext):
-    current = await state.get_state()
-    if current is None:
-        await msg.answer("Привет! 👋 Нажми /start чтобы начать игру.", reply_markup=kb_main())
 class AdminState(StatesGroup):
     waiting_profit = State()   # ждём ввод суммы прибыли
-
+ 
 
 # ────────────────────────────────────────────────────────────────
 #  /admin — вход в панель
@@ -1037,3 +1032,11 @@ async def adm_back(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await show_admin_panel(cb.message.chat.id, cb.message.message_id)
     await cb.answer()
+@dp.message()
+async def fallback(msg: Message, state: FSMContext):
+    current = await state.get_state()
+    if current is None:
+        await msg.answer("Привет! 👋 Нажми /start чтобы начать игру.", reply_markup=kb_main())
+        
+
+ 
