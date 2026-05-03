@@ -1,8 +1,10 @@
 # handlers.py (полная версия с фото в меню и битвах)
 import asyncio
 import random
-from aiogram import F
+from aiogram import F, html 
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 import config
@@ -894,3 +896,144 @@ async def fallback(msg: Message, state: FSMContext):
     current = await state.get_state()
     if current is None:
         await msg.answer("Привет! 👋 Нажми /start чтобы начать игру.", reply_markup=kb_main())
+class AdminState(StatesGroup):
+    waiting_profit = State()   # ждём ввод суммы прибыли
+
+
+# ────────────────────────────────────────────────────────────────
+#  /admin — вход в панель
+# ────────────────────────────────────────────────────────────────
+@dp.message(Command("admin"))
+async def cmd_admin(msg: Message, state: FSMContext):
+    if msg.from_user.id != config.ADMIN_ID:
+        await msg.answer("⛔ Доступ запрещён.")
+        return
+    await state.clear()
+    await show_admin_panel(msg.chat.id)
+
+
+async def show_admin_panel(chat_id: int, message_id: int = None):
+    """Отрисовка главного экрана админ-панели."""
+    text = (
+        f"👑 {html.bold('АДМИН-ПАНЕЛЬ')}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "🛠 Выбери инструмент:"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💸 Калькулятор прибыли", callback_data="adm_profit")],
+        # 👉 Сюда добавляй новые скрипты:
+        # [InlineKeyboardButton(text="📦 Склад товаров",    callback_data="adm_stock")],
+        # [InlineKeyboardButton(text="📊 Аналитика продаж", callback_data="adm_analytics")],
+    ])
+
+    if message_id:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
+    else:
+        await bot.send_message(
+            chat_id,
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
+
+
+# ────────────────────────────────────────────────────────────────
+#  💸 Калькулятор прибыли — шаг 1: запрос суммы
+# ────────────────────────────────────────────────────────────────
+@dp.callback_query(F.data == "adm_profit")
+async def adm_profit_start(cb: CallbackQuery, state: FSMContext):
+    if cb.from_user.id != config.ADMIN_ID:
+        await cb.answer("⛔", show_alert=True)
+        return
+
+    await state.set_state(AdminState.waiting_profit)
+    await state.update_data(adm_msg_id=cb.message.message_id)
+
+    await cb.message.edit_text(
+        f"💸 {html.bold('КАЛЬКУЛЯТОР ПРИБЫЛИ')}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Введи сумму прибыли (грн):\n\n"
+        f"Например: {html.code('1500')}",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="adm_back")],
+        ]),
+    )
+    await cb.answer()
+
+
+# ────────────────────────────────────────────────────────────────
+#  💸 Калькулятор прибыли — шаг 2: расчёт и вывод
+# ────────────────────────────────────────────────────────────────
+@dp.message(AdminState.waiting_profit)
+async def adm_profit_calc(msg: Message, state: FSMContext):
+    if msg.from_user.id != config.ADMIN_ID:
+        return
+
+    try:
+        clean = msg.text.strip().replace(",", ".").replace(" ", "")
+        amount = float(clean)
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await msg.answer(
+            f"❌ Введи корректное число.\n"
+            f"Пример: {html.code('2500')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    invest = amount * 0.50
+    save   = amount * 0.30
+    life   = amount * 0.20
+
+    # Удаляем сообщение пользователя — чище выглядит
+    try:
+        await msg.delete()
+    except:
+        pass
+
+    await state.clear()
+
+    result_text = (
+        f"💸 {html.bold('РАСПРЕДЕЛЕНИЕ ПРИБЫЛИ')}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 Прибыль:   {html.code(f'{amount:,.0f} грн')}\n\n"
+        f"📦 {html.bold('В оборот  50%')}  →  {html.code(f'{invest:,.0f} грн')}\n"
+        f"   {html.italic('(закуп товара, реклама)')}\n\n"
+        f"🏦 {html.bold('В копилку 30%')}  →  {html.code(f'{save:,.0f} грн')}\n"
+        f"   {html.italic('(копилка на мечту)')}\n\n"
+        f"🎯 {html.bold('На жизнь  20%')}  →  {html.code(f'{life:,.0f} грн')}\n"
+        f"   {html.italic('(Мак, кино, тренировки)')}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✅ Прибыль распределена!"
+    )
+
+    await bot.send_message(
+        msg.chat.id,
+        result_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Пересчитать",    callback_data="adm_profit")],
+            [InlineKeyboardButton(text="◀️ Назад в панель", callback_data="adm_back")],
+        ]),
+    )
+
+
+# ────────────────────────────────────────────────────────────────
+#  ◀️ Назад в главное меню панели
+# ────────────────────────────────────────────────────────────────
+@dp.callback_query(F.data == "adm_back")
+async def adm_back(cb: CallbackQuery, state: FSMContext):
+    if cb.from_user.id != config.ADMIN_ID:
+        await cb.answer("⛔", show_alert=True)
+        return
+    await state.clear()
+    await show_admin_panel(cb.message.chat.id, cb.message.message_id)
+    await cb.answer()
